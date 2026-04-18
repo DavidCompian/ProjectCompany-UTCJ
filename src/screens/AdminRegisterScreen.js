@@ -1,158 +1,188 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform } from 'react-native';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Linking, Platform } from 'react-native';
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
-import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 
-export default function AdminRegisterScreen({ navigation }) {
-  const [nombre, setNombre] = useState('');
-  const [numeroReloj, setNumeroReloj] = useState('');
-  const [puesto, setPuesto] = useState('');
-  const [password, setPassword] = useState('');
-  const [textoManual, setTextoManual] = useState(''); // Ahora es texto, no link
-  const [loading, setLoading] = useState(false);
-  const [savingManual, setSavingManual] = useState(false);
+export default function ProfileScreen({ navigation }) {
+  const [userData, setUserData] = useState(null);
+  const [horaServidor, setHoraServidor] = useState('--:--');
+  const [clima, setClima] = useState({ temp: '--', desc: 'Sincronizando...' });
+  const [tipoCambio, setTipoCambio] = useState('--.--');
+  const [eficiencia, setEficiencia] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const META_DIARIA = 10;
 
   useEffect(() => {
-    if (Platform.OS !== 'web') {
-      Alert.alert("Acceso Prohibido", "Esta función es exclusiva para PC.");
-      navigation.goBack();
-    }
+    let unsubscribeKPI;
 
-    // Cargar el texto actual que está en la base de datos para poder editarlo
-    const cargarContenidoManual = async () => {
+    const inicializarDashboard = async () => {
       try {
-        const docSnap = await getDoc(doc(db, "configuracion", "manual_texto"));
-        if (docSnap.exists()) {
-          setTextoManual(docSnap.data().contenido);
+        // Pedir permisos de ubicación para Clima
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({});
+          fetchClima(loc.coords.latitude, loc.coords.longitude);
+        } else {
+          fetchClimaJuarez();
         }
-      } catch (e) {
-        console.log("Error al cargar manual:", e);
-      }
+
+        const userAuth = auth.currentUser;
+        if (userAuth) {
+          const idUsuario = userAuth.email.split('@')[0].toUpperCase();
+          const docSnap = await getDoc(doc(db, "usuarios", idUsuario));
+          if (docSnap.exists()) setUserData(docSnap.data());
+
+          const q = query(collection(db, "registros_escaneo"), where("usuarioId", "==", idUsuario), where("estado", "==", "finalizado"));
+          unsubscribeKPI = onSnapshot(q, (snap) => {
+            let calculo = (snap.size / META_DIARIA) * 100;
+            setEficiencia(calculo > 100 ? 100 : calculo.toFixed(0));
+          });
+        }
+        fetchHora();
+        fetchDolar();
+      } catch (e) { console.log(e); } finally { setLoading(false); }
     };
-    cargarContenidoManual();
+
+    const fetchHora = () => {
+      fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua')
+        .then(res => res.json())
+        .then(data => setHoraServidor(new Date(data.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })))
+        .catch(() => setHoraServidor(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
+    };
+
+    const fetchClima = (lat, lon) => {
+      fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=8f273295b95f9c4d2847d0d04c407519&units=metric&lang=es`)
+        .then(res => res.json())
+        .then(data => setClima({ temp: Math.round(data.main.temp), desc: data.weather[0].description }))
+        .catch(() => fetchClimaJuarez());
+    };
+
+    const fetchClimaJuarez = () => {
+      fetch('https://api.openweathermap.org/data/2.5/weather?q=Ciudad+Juarez,MX&appid=8f273295b95f9c4d2847d0d04c407519&units=metric&lang=es')
+        .then(res => res.json())
+        .then(data => setClima({ temp: Math.round(data.main.temp), desc: data.weather[0].description }))
+        .catch(() => setClima({ temp: '??', desc: 'Error' }));
+    };
+
+    const fetchDolar = () => {
+      fetch('https://api.exchangerate-api.com/v4/latest/USD')
+        .then(res => res.json())
+        .then(data => setTipoCambio(data.rates.MXN.toFixed(2)))
+        .catch(() => setTipoCambio('18.50'));
+    };
+
+    inicializarDashboard();
+    return () => unsubscribeKPI && unsubscribeKPI();
   }, []);
 
-  const registrarPersonal = async () => {
-    const idLimpio = numeroReloj.trim().toUpperCase();
-    const emailFinal = `${idLimpio}@projectcompany.com`.replace(/\s/g, '');
-    
-    if (!nombre || !idLimpio || !password) {
-      Alert.alert("Error", "Todos los campos son obligatorios.");
-      return;
-    }
-
-    setLoading(true);
+  const abrirManualDinamico = async () => {
     try {
-      await createUserWithEmailAndPassword(auth, emailFinal, password.trim());
-      await setDoc(doc(db, "usuarios", idLimpio), {
-        nombre: nombre.trim(),
-        numeroReloj: idLimpio,
-        puesto: puesto.trim(),
-        rol: 'operador',
-        fechaRegistro: new Date().toISOString()
-      });
-      Alert.alert("Éxito", "Técnico registrado correctamente.");
-      setNombre(''); setNumeroReloj(''); setPuesto(''); setPassword('');
-    } catch (error) {
-      Alert.alert("Error", "No se pudo completar el registro.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      const docSnap = await getDoc(doc(db, "configuracion", "manual"));
+      if (docSnap.exists()) {
+        let url = docSnap.data().url;
+        
+        // CORRECCIÓN PARA GOOGLE DRIVE EN MÓVILES
+        if (url.includes('drive.google.com')) {
+           url = url.replace('/view?usp=sharing', '/preview');
+           url = url.replace('/view', '/preview');
+        }
 
-  const guardarContenidoManual = async () => {
-    if (textoManual.length < 10) {
-      Alert.alert("Error", "El contenido del manual es muy corto.");
-      return;
-    }
-
-    setSavingManual(true);
-    try {
-      // Guardamos el texto plano en Firestore. Esto es gratis y 100% compatible.
-      await setDoc(doc(db, "configuracion", "manual_texto"), {
-        contenido: textoManual,
-        ultimaActualizacion: new Date().toISOString()
-      }, { merge: true });
-      
-      Alert.alert("Éxito", "Contenido del manual actualizado para todos los técnicos.");
+        if (Platform.OS === 'web') {
+          window.open(url, '_blank');
+        } else {
+          await Linking.openURL(url);
+        }
+      } else {
+        Alert.alert("Aviso", "No hay un manual activo.");
+      }
     } catch (e) {
-      Alert.alert("Error", "No se pudo guardar el contenido.");
-    } finally {
-      setSavingManual(false);
+      Alert.alert("Error", "No se pudo abrir el archivo.");
     }
   };
+
+  if (loading) return <View style={styles.loadingCenter}><ActivityIndicator size="large" color="#2196F3" /></View>;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity 
-        style={styles.backButton} 
-        onPress={() => navigation.navigate('Login')}
-      >
-        <Ionicons name="arrow-back" size={24} color="#333" />
-        <Text style={styles.backText}>Volver al Inicio</Text>
+    <ScrollView style={styles.container}>
+      <View style={styles.headerCard}>
+        <Text style={styles.label}>TÉCNICO RESPONSABLE</Text>
+        <Text style={styles.nameValue}>{userData?.nombre || "Usuario Sistema"}</Text>
+        <View style={styles.rowInfo}>
+          <View>
+            <Text style={styles.label}>NÚMERO DE RELOJ</Text>
+            <Text style={styles.idValue}>{userData?.numeroReloj || "S/N"}</Text>
+          </View>
+          <View style={{alignItems: 'flex-end'}}>
+            <Text style={styles.label}>PUESTO</Text>
+            <Text style={styles.puestoValue}>{userData?.puesto || "Técnico"}</Text>
+          </View>
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Dashboard Industrial (4 APIs)</Text>
+      
+      <View style={styles.apiRow}>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>HORA OFICIAL</Text>
+          <Text style={styles.val}>{horaServidor}</Text>
+          <Text style={styles.cardDesc}>Juárez (API 2)</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>CLIMA ACTUAL</Text>
+          <Text style={styles.val}>{clima.temp}°C</Text>
+          <Text style={styles.cardDesc}>{clima.desc}</Text>
+        </View>
+      </View>
+
+      <View style={[styles.apiRow, { marginTop: 15 }]}>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>USD / MXN</Text>
+          <Text style={styles.val}>${tipoCambio}</Text>
+          <Text style={styles.cardDesc}>Finanzas (API 4)</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>EFICIENCIA KPI</Text>
+          <Text style={[styles.val, { color: eficiencia >= 90 ? '#4CAF50' : '#FF9800' }]}>{eficiencia}%</Text>
+          <Text style={styles.cardDesc}>Firebase (API 1)</Text>
+        </View>
+      </View>
+
+      <TouchableOpacity style={styles.manualCard} onPress={abrirManualDinamico}>
+        <View style={styles.manualIcon}><Text style={{ color: '#fff', fontWeight: 'bold' }}>PDF</Text></View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.manualTitle}>Manuales Técnicos</Text>
+          <Text style={styles.manualSub}>Toque para abrir el visor Drive</Text>
+        </View>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Panel Administrativo</Text>
-      
-      {/* SECCIÓN 1: REGISTRO DE USUARIOS */}
-      <View style={styles.section}>
-        <Text style={styles.subtitle}>Alta de Personal</Text>
-        <TextInput style={styles.input} placeholder="Nombre del Técnico" value={nombre} onChangeText={setNombre} />
-        <TextInput style={styles.input} placeholder="No. Reloj" value={numeroReloj} onChangeText={setNumeroReloj} autoCapitalize="characters" />
-        <TextInput style={styles.input} placeholder="Puesto" value={puesto} onChangeText={setPuesto} />
-        <TextInput style={styles.input} placeholder="Contraseña" value={password} onChangeText={setPassword} secureTextEntry />
-
-        <TouchableOpacity style={styles.button} onPress={registrarPersonal} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>REGISTRAR TÉCNICO</Text>}
-        </TouchableOpacity>
-      </View>
-
-      {/* SECCIÓN 2: MANUAL TÉCNICO (TEXTO) */}
-      <View style={[styles.section, { marginTop: 30, paddingBottom: 50 }]}>
-        <Text style={[styles.subtitle, { color: '#2196F3' }]}>Editor de Manual Técnico</Text>
-        <Text style={styles.infoText}>Escriba las instrucciones, esquemas y guías de sensores aquí abajo:</Text>
-        
-        <TextInput 
-          style={[styles.input, styles.textArea]} 
-          placeholder="Ej: Paso 1: Verifique el sensor inductivo..." 
-          value={textoManual} 
-          onChangeText={setTextoManual}
-          multiline={true}
-          numberOfLines={10}
-          textAlignVertical="top"
-        />
-
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: '#2196F3' }]} 
-          onPress={guardarContenidoManual} 
-          disabled={savingManual}
-        >
-          {savingManual ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>ACTUALIZAR MANUAL EN LA APP</Text>}
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={styles.logoutBtn} onPress={() => { auth.signOut(); navigation.replace('Login'); }}>
+        <Text style={styles.logoutText}>CERRAR SESIÓN SEGURA</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 40, backgroundColor: '#fff' },
-  backButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    position: 'absolute', 
-    top: 20, 
-    left: 20,
-    zIndex: 10
-  },
-  backText: { marginLeft: 5, fontSize: 16, color: '#333', fontWeight: '500' },
-  section: { width: '100%', maxWidth: 600, alignSelf: 'center', marginTop: 20 },
-  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 20, marginTop: 40 },
-  subtitle: { fontSize: 16, textAlign: 'center', color: '#4caf50', marginBottom: 20, fontWeight: 'bold', textTransform: 'uppercase' },
-  input: { backgroundColor: '#f9f9f9', padding: 15, borderRadius: 10, marginBottom: 15, borderWidth: 1, borderColor: '#eee' },
-  textArea: { height: 200, fontSize: 14, lineHeight: 20 },
-  button: { backgroundColor: '#4caf50', padding: 20, borderRadius: 10, alignItems: 'center', elevation: 2 },
-  buttonText: { color: '#fff', fontWeight: 'bold' },
-  infoText: { fontSize: 12, color: '#666', marginBottom: 10, textAlign: 'center' }
+  container: { flex: 1, backgroundColor: '#f0f2f5', padding: 20 },
+  loadingCenter: { flex: 1, justifyContent: 'center' },
+  headerCard: { backgroundColor: '#fff', padding: 25, borderRadius: 15, marginTop: 30, elevation: 4, borderLeftWidth: 8, borderLeftColor: '#2196F3' },
+  label: { fontSize: 10, color: '#999', fontWeight: 'bold' },
+  nameValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15 },
+  idValue: { fontSize: 16, fontWeight: 'bold', color: '#555' },
+  puestoValue: { fontSize: 13, color: '#2196F3', fontWeight: 'bold' },
+  sectionTitle: { marginVertical: 20, fontSize: 16, fontWeight: 'bold', color: '#444' },
+  apiRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '48%', alignItems: 'center', elevation: 2 },
+  cardLabel: { fontSize: 10, color: '#888', fontWeight: 'bold', marginBottom: 8 },
+  val: { fontSize: 22, fontWeight: 'bold', color: '#2196F3' },
+  cardDesc: { fontSize: 9, color: '#bbb', marginTop: 5 },
+  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+  manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#FF5252', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  manualTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  manualSub: { fontSize: 12, color: '#999' },
+  logoutBtn: { backgroundColor: '#333', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 50 },
+  logoutText: { color: 'white', fontWeight: 'bold' }
 });

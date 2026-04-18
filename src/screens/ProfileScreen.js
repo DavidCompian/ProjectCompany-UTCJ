@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Modal, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Linking, Platform } from 'react-native';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 import * as Location from 'expo-location';
@@ -12,9 +12,6 @@ export default function ProfileScreen({ navigation }) {
   const [eficiencia, setEficiencia] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // URL de tu PDF en Google Drive (Asegúrate de que esté en "Cualquier persona con el enlace")
-  const DRIVE_PDF_URL = "TU_ENLACE_DE_COMPARTIR_AQUÍ";
-
   const META_DIARIA = 10;
 
   useEffect(() => {
@@ -22,7 +19,7 @@ export default function ProfileScreen({ navigation }) {
 
     const inicializarApp = async () => {
       try {
-        // Solicitud de permisos para clima
+        // Permisos de ubicación para Clima
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({});
@@ -37,6 +34,7 @@ export default function ProfileScreen({ navigation }) {
           const docSnap = await getDoc(doc(db, "usuarios", idUsuario));
           if (docSnap.exists()) setUserData(docSnap.data());
 
+          // API 1: Firebase - KPI en tiempo real
           const q = query(collection(db, "registros_escaneo"), where("usuarioId", "==", idUsuario), where("estado", "==", "finalizado"));
           unsubscribeKPI = onSnapshot(q, (snap) => {
             let calculo = (snap.size / META_DIARIA) * 100;
@@ -46,9 +44,14 @@ export default function ProfileScreen({ navigation }) {
 
         fetchHora();
         fetchDolar();
-      } catch (e) { console.log(e); } finally { setLoading(false); }
+      } catch (e) { 
+        console.log("Error inicialización:", e); 
+      } finally { 
+        setLoading(false); 
+      }
     };
 
+    // API 2: Hora Oficial
     const fetchHora = () => {
       fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua')
         .then(res => res.json())
@@ -56,6 +59,7 @@ export default function ProfileScreen({ navigation }) {
         .catch(() => setHoraServidor(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
     };
 
+    // API 3: Clima
     const fetchClima = (lat, lon) => {
       fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=8f273295b95f9c4d2847d0d04c407519&units=metric&lang=es`)
         .then(res => res.json())
@@ -70,21 +74,44 @@ export default function ProfileScreen({ navigation }) {
         .catch(() => setClima({ temp: 'N/A', desc: 'Desconectado' }));
     };
 
+    // API 4: Dólar
     const fetchDolar = () => {
       fetch('https://api.exchangerate-api.com/v4/latest/USD')
         .then(res => res.json())
         .then(data => setTipoCambio(data.rates.MXN.toFixed(2)))
-        .catch(() => setTipoCambio('18.20'));
+        .catch(() => setTipoCambio('18.50'));
     };
 
     inicializarApp();
     return () => unsubscribeKPI && unsubscribeKPI();
   }, []);
 
-  const abrirManualDrive = () => {
-    Linking.openURL(DRIVE_PDF_URL).catch(() => {
-      Alert.alert("Error", "No se pudo abrir el manual desde Google Drive.");
-    });
+  // FUNCIÓN CORREGIDA: Trae el link del Admin y abre sin refrescar la app
+  const abrirManualDrive = async () => {
+    try {
+      const docSnap = await getDoc(doc(db, "configuracion", "manual"));
+      if (docSnap.exists()) {
+        let url = docSnap.data().url;
+        
+        // TRUCO: Formatear para visor de Drive (Evita descargas y cierres de sesión)
+        if (url.includes('drive.google.com')) {
+           url = url.replace('/view?usp=sharing', '/preview');
+           url = url.replace('/view', '/preview');
+        }
+
+        // En Web usamos Linking.openURL pero con un pequeño delay o target _blank nativo
+        if (Platform.OS === 'web') {
+          const win = window.open(url, '_blank');
+          if (win) win.focus();
+        } else {
+          await Linking.openURL(url);
+        }
+      } else {
+        Alert.alert("Aviso", "El administrador no ha configurado un manual.");
+      }
+    } catch (e) {
+      Alert.alert("Error", "No se pudo conectar para obtener el manual.");
+    }
   };
 
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color="#2196F3"/></View>;
@@ -93,7 +120,7 @@ export default function ProfileScreen({ navigation }) {
     <ScrollView style={styles.container}>
       <View style={styles.headerCard}>
         <Text style={styles.label}>TÉCNICO OPERATIVO</Text>
-        <Text style={styles.nameValue}>{userData?.nombre || "Cargando..."}</Text>
+        <Text style={styles.nameValue}>{userData?.nombre || "Usuario Sistema"}</Text>
         <View style={styles.rowInfo}>
           <View>
             <Text style={styles.label}>ID EMPLEADO</Text>
@@ -101,50 +128,50 @@ export default function ProfileScreen({ navigation }) {
           </View>
           <View style={{alignItems: 'flex-end'}}>
             <Text style={styles.label}>PUESTO</Text>
-            <Text style={styles.puestoValue}>{userData?.puesto || "Técnico"}</Text>
+            <Text style={styles.puestoValue}>{userData?.puesto || "Mantenimiento"}</Text>
           </View>
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Panel de Control</Text>
+      <Text style={styles.sectionTitle}>Panel de Control (4 APIs)</Text>
       
       <View style={styles.apiRow}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>HORA OFICIAL</Text>
           <Text style={styles.val}>{horaServidor}</Text>
-          <Text style={styles.cardDesc}>Juárez</Text>
+          <Text style={styles.cardDesc}>Juárez (API 2)</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>CLIMA</Text>
           <Text style={styles.val}>{clima.temp}°C</Text>
-          <Text style={[styles.cardDesc, {textTransform: 'capitalize'}]}>{clima.desc}</Text>
+          <Text style={[styles.cardDesc, {textTransform: 'capitalize'}]}>{clima.desc} (API 3)</Text>
         </View>
       </View>
 
       <View style={[styles.apiRow, {marginTop: 15}]}>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>DÓLAR (MXN)</Text>
+          <Text style={styles.cardLabel}>DÓLAR (USD)</Text>
           <Text style={styles.val}>${tipoCambio}</Text>
-          <Text style={styles.cardDesc}>Finanzas</Text>
+          <Text style={styles.cardDesc}>Finanzas (API 4)</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>KPI EFICIENCIA</Text>
           <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>{eficiencia}%</Text>
-          <Text style={styles.cardDesc}>Firebase</Text>
+          <Text style={styles.cardDesc}>Firebase (API 1)</Text>
         </View>
       </View>
 
-      {/* BOTÓN DE MANUAL CONECTADO A GOOGLE DRIVE */}
+      {/* BOTÓN DINÁMICO */}
       <TouchableOpacity style={styles.manualCard} onPress={abrirManualDrive}>
         <View style={styles.manualIcon}><Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text></View>
         <View style={{flex: 1}}>
             <Text style={styles.manualTitle}>Manual de Procedimientos</Text>
-            <Text style={styles.manualSub}>Abrir archivo desde Google Drive</Text>
+            <Text style={styles.manualSub}>Toque para abrir el visor técnico</Text>
         </View>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={() => { auth.signOut(); navigation.replace('Login'); }}>
-        <Text style={{color: '#fff', fontWeight: 'bold'}}>CERRAR SESIÓN</Text>
+        <Text style={{color: '#fff', fontWeight: 'bold'}}>CERRAR SESIÓN SEGURA</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -158,14 +185,14 @@ const styles = StyleSheet.create({
   nameValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 10 },
   rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10 },
   idValue: { fontSize: 16, fontWeight: 'bold' },
-  puestoValue: { fontSize: 13, color: '#2196F3', fontWeight: 'bold' },
-  sectionTitle: { marginVertical: 20, fontSize: 14, fontWeight: 'bold', color: '#666' },
+  puestoValue: { fontSize: 13, color: '#2196F3', fontWeight: 'bold', textTransform: 'uppercase' },
+  sectionTitle: { marginVertical: 20, fontSize: 14, fontWeight: 'bold', color: '#444' },
   apiRow: { flexDirection: 'row', justifyContent: 'space-between' },
   card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '48%', alignItems: 'center', elevation: 2 },
   cardLabel: { fontSize: 10, color: '#888', fontWeight: 'bold' },
-  val: { fontSize: 24, fontWeight: 'bold', color: '#2196F3' },
+  val: { fontSize: 22, fontWeight: 'bold', color: '#2196F3' },
   cardDesc: { fontSize: 9, color: '#bbb' },
-  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
   manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#E53935', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   manualTitle: { fontSize: 16, fontWeight: 'bold' },
   manualSub: { fontSize: 12, color: '#999' },

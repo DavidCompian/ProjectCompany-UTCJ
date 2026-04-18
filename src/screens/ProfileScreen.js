@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 
-// Importaciones de Firebase para datos reales
-import { doc, getDoc } from 'firebase/firestore';
+// Importaciones de Firebase
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
 export default function ProfileScreen({ navigation }) {
@@ -11,10 +11,15 @@ export default function ProfileScreen({ navigation }) {
   const [eficiencia, setEficiencia] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // META DIARIA: Puedes ajustarla según lo que pida el proyecto (ej. 10 fixturas al día)
+  const META_DIARIA = 10;
+
   useEffect(() => {
+    let unsubscribeKPI;
+
     const fetchIndustrialData = async () => {
       try {
-        // 1. OBTENER DATOS DEL TÉCNICO (FIREBASE)
+        // 1. OBTENER DATOS DEL TÉCNICO (Carga inicial)
         const userAuth = auth.currentUser;
         if (userAuth) {
           const idUsuario = userAuth.email.split('@')[0].toUpperCase();
@@ -22,18 +27,30 @@ export default function ProfileScreen({ navigation }) {
           if (docSnap.exists()) {
             setUserData(docSnap.data());
           }
+
+          // 2. CONFIGURAR ESCUCHA EN TIEMPO REAL PARA EL KPI
+          // Buscamos registros donde el usuario es el actual y el estado es 'finalizado'
+          const q = query(
+            collection(db, "registros_escaneo"),
+            where("usuarioId", "==", idUsuario),
+            where("estado", "==", "finalizado")
+          );
+
+          unsubscribeKPI = onSnapshot(q, (querySnapshot) => {
+            const totalCompletados = querySnapshot.size;
+            // Cálculo de eficiencia: (Realizado / Meta) * 100
+            let calculo = (totalCompletados / META_DIARIA) * 100;
+            if (calculo > 100) calculo = 100; // Tope al 100%
+            
+            setEficiencia(calculo.toFixed(0)); // Sin decimales
+          });
         }
 
-        // 2. API DE TIEMPO (Sincronización de Turno)
-        // Usamos worldtimeapi para obtener la hora real de la planta y no la del cel
+        // 3. API DE TIEMPO (Hora oficial de la planta)
         const timeRes = await fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua');
         const timeData = await timeRes.json();
         const horaResumen = new Date(timeData.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         setHoraServidor(horaResumen);
-
-        // 3. CÁLCULO DE KPI (Simulación de Eficiencia)
-        // Aquí podrías consultar tu tabla de 'registros_escaneo' para sacar el % real
-        setEficiencia(85); // Ejemplo: 85% de fixturas entregadas a tiempo
 
       } catch (e) {
         console.log("Error en carga técnica:", e);
@@ -43,6 +60,11 @@ export default function ProfileScreen({ navigation }) {
     };
 
     fetchIndustrialData();
+
+    // Limpieza al desmontar el componente
+    return () => {
+      if (unsubscribeKPI) unsubscribeKPI();
+    };
   }, []);
 
   if (loading) {
@@ -59,7 +81,7 @@ export default function ProfileScreen({ navigation }) {
       {/* SECCIÓN DE IDENTIDAD INDUSTRIAL */}
       <View style={styles.headerCard}>
         <Text style={styles.label}>TÉCNICO RESPONSABLE</Text>
-        <Text style={styles.nameValue}>{userData?.nombre || "Usuario Sistema"}</Text>
+        <Text style={styles.nameValue}>{userData?.nombre || "Cargando..."}</Text>
         
         <View style={styles.rowInfo}>
           <View>
@@ -77,38 +99,42 @@ export default function ProfileScreen({ navigation }) {
       
       {/* TARJETAS DE APIS INDUSTRIALES */}
       <View style={styles.apiRow}>
-        {/* API DE TIEMPO: Sincronización de Ciclo */}
         <View style={styles.card}>
           <Text style={styles.cardLabel}>HORA SERVIDOR</Text>
           <Text style={styles.val}>{horaServidor}</Text>
-          <Text style={styles.cardDesc}>Sincronizado (GMT-6)</Text>
+          <Text style={styles.cardDesc}>Ciudad Juárez (GMT-6)</Text>
         </View>
 
-        {/* API DE KPI: Eficiencia de Reparación */}
         <View style={styles.card}>
           <Text style={styles.cardLabel}>EFICIENCIA KPI</Text>
-          <Text style={[styles.val, {color: eficiencia > 80 ? '#4CAF50' : '#FF9800'}]}>
+          <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>
             {eficiencia}%
           </Text>
           <Text style={styles.cardDesc}>Meta: 90%</Text>
         </View>
       </View>
 
-      {/* API DE DOCUMENTACIÓN (ACCESO A MANUALES) */}
+      {/* BOTÓN DE MANUALES */}
       <TouchableOpacity 
         style={styles.manualCard}
-        onPress={() => Alert.alert("ProjectCompany", "Abriendo repositorio de manuales PDF de Fixturas...")}
+        onPress={() => Alert.alert("ProjectCompany", "Accediendo a la base de datos de manuales técnicos...")}
       >
         <View style={styles.manualIcon}>
             <Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text>
         </View>
         <View>
             <Text style={styles.manualTitle}>Manuales Técnicos</Text>
-            <Text style={styles.manualSub}>Consulta diagramas y planos</Text>
+            <Text style={styles.manualSub}>Esquemas de fixturas y sensores</Text>
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={() => navigation.replace('Login')}>
+      <TouchableOpacity 
+        style={styles.logoutBtn} 
+        onPress={() => {
+          auth.signOut();
+          navigation.replace('Login');
+        }}
+      >
         <Text style={styles.logoutText}>CERRAR SESIÓN SEGURA</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -132,27 +158,16 @@ const styles = StyleSheet.create({
   rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15 },
   idValue: { fontSize: 16, fontWeight: 'bold', color: '#555' },
   puestoValue: { fontSize: 14, color: '#2196F3', fontWeight: 'bold', textTransform: 'uppercase' },
-
   sectionTitle: { marginVertical: 20, fontSize: 16, fontWeight: 'bold', color: '#444' },
   apiRow: { flexDirection: 'row', justifyContent: 'space-between' },
   card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '48%', alignItems: 'center', elevation: 2 },
   cardLabel: { fontSize: 10, color: '#888', fontWeight: 'bold', marginBottom: 8 },
   val: { fontSize: 24, fontWeight: 'bold', color: '#2196F3' },
   cardDesc: { fontSize: 9, color: '#bbb', marginTop: 5 },
-
-  manualCard: { 
-    backgroundColor: '#fff', 
-    marginTop: 20, 
-    padding: 20, 
-    borderRadius: 15, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    elevation: 2 
-  },
+  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
   manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#FF5252', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   manualTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
   manualSub: { fontSize: 12, color: '#999' },
-
   logoutBtn: { backgroundColor: '#333', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 50 },
   logoutText: { color: 'white', fontWeight: 'bold' }
 });

@@ -94,7 +94,7 @@ export default function AdminRegisterScreen({ navigation }) {
         <Text style={styles.backText}>Volver al Inicio</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Panel Administrativo V2</Text>
+      <Text style={styles.title}>Panel Administrativo</Text>
       
       {/* SECCIÓN 1: REGISTRO DE USUARIOS */}
       <View style={styles.section}>

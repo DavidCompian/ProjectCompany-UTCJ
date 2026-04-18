@@ -9,7 +9,6 @@ import {
   Image, 
   ScrollView, 
   Platform, 
-  TouchableWithoutFeedback, 
   Keyboard, 
   Dimensions,
   KeyboardAvoidingView 
@@ -25,10 +24,7 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
 
   const irARegistro = () => {
-    // REGLA DE SEGURIDAD: Solo permite si es WEB y la pantalla es de PC (> 768px)
-    // Si es un celular (aunque use navegador web), el ancho será menor a 768
     const esPC = Platform.OS === 'web' && Dimensions.get('window').width >= 768;
-
     if (esPC) {
       navigation.navigate('AdminRegister');
     } else {
@@ -69,51 +65,51 @@ export default function LoginScreen({ navigation }) {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1, backgroundColor: '#fff' }}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView 
-          contentContainerStyle={styles.scrollContainer}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.card}>
-            {/* LOGO CON RUTA SECRETA: 3 segundos presionado */}
-            <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000}>
-              <Image 
-                source={require('../../assets/logo.png')} 
-                style={styles.logo} 
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="always" // Esto permite que el clic en web no se pierda
+      >
+        <View style={styles.card}>
+          {/* LOGO CON RUTA SECRETA */}
+          <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000}>
+            <Image 
+              source={require('../../assets/logo.png')} 
+              style={styles.logo} 
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          
+          <View style={styles.form}>
+            <TextInput 
+              style={styles.input} 
+              placeholder="Número de Reloj" 
+              value={numeroReloj}
+              onChangeText={text => setNumeroReloj(text)} 
+              autoCapitalize="characters" 
+              placeholderTextColor="#999"
+              // En web, esto asegura que el cursor aparezca al primer clic
+              selectTextOnFocus={true} 
+            />
+            <TextInput 
+              style={styles.input} 
+              placeholder="Contraseña" 
+              value={password}
+              onChangeText={text => setPassword(text)} 
+              secureTextEntry 
+              placeholderTextColor="#999"
+              selectTextOnFocus={true}
+            />
             
-            <View style={styles.form}>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Número de Reloj" 
-                value={numeroReloj}
-                onChangeText={text => setNumeroReloj(text)} 
-                autoCapitalize="characters" 
-                placeholderTextColor="#999"
-              />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Contraseña" 
-                value={password}
-                onChangeText={text => setPassword(text)} 
-                secureTextEntry 
-                placeholderTextColor="#999"
-              />
-              
-              <TouchableOpacity style={styles.button} onPress={handleLogin}>
-                <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Hint solo visible en PC para no dar pistas en móvil */}
-            {Platform.OS === 'web' && Dimensions.get('window').width >= 768 && (
-              <Text style={styles.hint}>PC Detectada: Mantén presionado el logo para gestionar personal</Text>
-            )}
+            <TouchableOpacity style={styles.button} onPress={handleLogin}>
+              <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </TouchableWithoutFeedback>
+
+          {Platform.OS === 'web' && Dimensions.get('window').width >= 768 && (
+            <Text style={styles.hint}>PC Detectada: Mantén presionado para gestionar personal</Text>
+          )}
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -131,14 +127,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20
   },
-  logo: { 
-    width: 280, 
-    height: 200, 
-    marginBottom: 20 
-  },
-  form: {
-    width: '100%',
-  },
+  logo: { width: 280, height: 200, marginBottom: 20 },
+  form: { width: '100%' },
   input: { 
     backgroundColor: '#f5f5f5', 
     padding: 18, 
@@ -148,15 +138,11 @@ const styles = StyleSheet.create({
     borderColor: '#eee', 
     textAlign: 'center',
     fontSize: 16,
-    color: '#000'
+    color: '#000',
+    // IMPORTANTE para web:
+    outlineStyle: 'none' 
   },
-  button: { 
-    backgroundColor: '#2196F3', 
-    padding: 20, 
-    borderRadius: 12, 
-    alignItems: 'center',
-    marginTop: 10
-  },
+  button: { backgroundColor: '#2196F3', padding: 20, borderRadius: 12, alignItems: 'center', marginTop: 10 },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 18 },
   hint: { textAlign: 'center', marginTop: 25, color: '#ccc', fontSize: 11 }
 });

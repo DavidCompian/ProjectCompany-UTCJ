@@ -13,17 +13,36 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.reydavid.projectcompany"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.reydavid.projectcompany",
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/logo.png",
+      "title": "PROJECTCOMPANY - Panel Técnico",
+      "description": "Sistema de Gestión de Fixturas V2",
+      "splash": {
+        "image": "./assets/logo.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#ffffff"
+      },
+      "config": {
+        "firebase": {
+          "apiKey": "TU_API_KEY",
+          "authDomain": "projectcompany-431b9.firebaseapp.com",
+          "projectId": "projectcompany-431b9",
+          "storageBucket": "projectcompany-431b9.firebasestorage.app",
+          "messagingSenderId": "TU_SENDER_ID",
+          "appId": "TU_APP_ID"
+        }
+      }
     }
   }
 }

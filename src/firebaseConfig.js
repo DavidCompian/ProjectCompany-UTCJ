@@ -1,8 +1,13 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { 
+  initializeAuth, 
+  getReactNativePersistence, 
+  browserLocalPersistence 
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-// Credenciales de ProjectCompany-431b9
 const firebaseConfig = {
   apiKey: "AIzaSyDZZkEFJjGKJKDNPHQigvpmbDwGQREQqHs",
   authDomain: "projectcompany-431b9.firebaseapp.com",
@@ -13,8 +18,17 @@ const firebaseConfig = {
   measurementId: "G-PCE1VB21NS"
 };
 
+// Inicializar App
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-// Storage eliminado para evitar costos y errores de librería
+// Configurar Auth con Persistencia
+// Si es Web usa 'browserLocalPersistence', si es Móvil usa 'AsyncStorage'
+const auth = initializeAuth(app, {
+  persistence: Platform.OS === 'web' 
+    ? browserLocalPersistence 
+    : getReactNativePersistence(ReactNativeAsyncStorage),
+});
+
+const db = getFirestore(app);
+
+export { auth, db };

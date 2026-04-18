@@ -126,7 +126,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Dashboard Industrial (4 APIs)</Text>
+      <Text style={styles.sectionTitle}>Dashboard Industrial</Text>
       
       <View style={styles.apiRow}>
         <View style={styles.card}>

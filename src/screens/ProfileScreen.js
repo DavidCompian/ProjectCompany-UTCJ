@@ -128,14 +128,14 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Dashboard Operativo (4 APIs)</Text>
+      <Text style={styles.sectionTitle}>Dashboard Operativo</Text>
       
       {/* GRID DE MÉTRICAS */}
       <View style={styles.apiRow}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>HORA OFICIAL</Text>
           <Text style={styles.val}>{horaServidor}</Text>
-          <Text style={styles.cardDesc}>Juárez (API 2)</Text>
+          <Text style={styles.cardDesc}>Juárez</Text>
         </View>
 
         <View style={styles.card}>
@@ -149,13 +149,13 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.card}>
           <Text style={styles.cardLabel}>TIPO DE CAMBIO</Text>
           <Text style={styles.val}>${tipoCambio}</Text>
-          <Text style={styles.cardDesc}>USD/MXN (API 4)</Text>
+          <Text style={styles.cardDesc}>USD/MXN</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>EFICIENCIA KPI</Text>
           <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>{eficiencia}%</Text>
-          <Text style={styles.cardDesc}>Firebase (API 1)</Text>
+          <Text style={styles.cardDesc}>Firebase</Text>
         </View>
       </View>
 
@@ -170,7 +170,7 @@ export default function ProfileScreen({ navigation }) {
 
       <Modal visible={manualVisible} animationType="slide">
         <View style={styles.modalContent}>
-           <Text style={styles.modalHeader}>Guía Técnica V2</Text>
+           <Text style={styles.modalHeader}>Guía Técnica</Text>
            <ScrollView style={styles.modalBody}>
               <Text style={styles.manualText}>{contenidoManual || "Cargando contenido..."}</Text>
            </ScrollView>

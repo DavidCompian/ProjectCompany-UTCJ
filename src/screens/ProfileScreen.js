@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Modal, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Modal, Alert, Linking } from 'react-native';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
-import * as Location from 'expo-location'; // Necesario para permisos de clima
+import * as Location from 'expo-location';
 
 export default function ProfileScreen({ navigation }) {
   const [userData, setUserData] = useState(null);
@@ -11,28 +11,26 @@ export default function ProfileScreen({ navigation }) {
   const [tipoCambio, setTipoCambio] = useState('--.--');
   const [eficiencia, setEficiencia] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [manualVisible, setManualVisible] = useState(false);
-  const [contenidoManual, setContenidoManual] = useState('');
+
+  // URL de tu PDF en Google Drive (Asegúrate de que esté en "Cualquier persona con el enlace")
+  const DRIVE_PDF_URL = "TU_ENLACE_DE_COMPARTIR_AQUÍ";
 
   const META_DIARIA = 10;
 
   useEffect(() => {
     let unsubscribeKPI;
 
-    const inicializarDashboard = async () => {
+    const inicializarApp = async () => {
       try {
-        // --- 1. SOLICITAR PERMISOS (Ubicación para Clima) ---
+        // Solicitud de permisos para clima
         const { status } = await Location.requestForegroundPermissionsAsync();
-        
         if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          fetchClimaPorCoordenadas(location.coords.latitude, location.coords.longitude);
+          const loc = await Location.getCurrentPositionAsync({});
+          fetchClima(loc.coords.latitude, loc.coords.longitude);
         } else {
-          // Fallback a Ciudad Juárez si no hay permisos
-          fetchClimaGeneral("Ciudad Juarez,MX");
+          fetchClimaJuarez();
         }
 
-        // --- 2. API FIREBASE (KPIs y Perfil) ---
         const userAuth = auth.currentUser;
         if (userAuth) {
           const idUsuario = userAuth.email.split('@')[0].toUpperCase();
@@ -46,79 +44,59 @@ export default function ProfileScreen({ navigation }) {
           });
         }
 
-        // --- 3. API HORA (Con Fallback) ---
         fetchHora();
-
-        // --- 4. API TIPO DE CAMBIO ---
         fetchDolar();
-
-      } catch (e) {
-        console.log("Error inicialización:", e);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.log(e); } finally { setLoading(false); }
     };
 
-    // Funciones Auxiliares para Limpieza del useEffect
     const fetchHora = () => {
       fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua')
         .then(res => res.json())
-        .then(data => {
-          const date = new Date(data.datetime);
-          setHoraServidor(date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        })
-        .catch(() => {
-          const now = new Date();
-          setHoraServidor(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        });
+        .then(data => setHoraServidor(new Date(data.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })))
+        .catch(() => setHoraServidor(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
     };
 
-    const fetchClimaPorCoordenadas = (lat, lon) => {
+    const fetchClima = (lat, lon) => {
       fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=8f273295b95f9c4d2847d0d04c407519&units=metric&lang=es`)
         .then(res => res.json())
         .then(data => setClima({ temp: Math.round(data.main.temp), desc: data.weather[0].description }))
-        .catch(() => fetchClimaGeneral("Ciudad Juarez,MX"));
+        .catch(() => fetchClimaJuarez());
     };
 
-    const fetchClimaGeneral = (ciudad) => {
-      fetch(`https://api.openweathermap.org/data/2.5/weather?q=${ciudad}&appid=8f273295b95f9c4d2847d0d04c407519&units=metric&lang=es`)
+    const fetchClimaJuarez = () => {
+      fetch('https://api.openweathermap.org/data/2.5/weather?q=Ciudad+Juarez,MX&appid=8f273295b95f9c4d2847d0d04c407519&units=metric&lang=es')
         .then(res => res.json())
         .then(data => setClima({ temp: Math.round(data.main.temp), desc: data.weather[0].description }))
-        .catch(() => setClima({ temp: '??', desc: 'Sin conexión' }));
+        .catch(() => setClima({ temp: 'N/A', desc: 'Desconectado' }));
     };
 
     const fetchDolar = () => {
       fetch('https://api.exchangerate-api.com/v4/latest/USD')
         .then(res => res.json())
         .then(data => setTipoCambio(data.rates.MXN.toFixed(2)))
-        .catch(() => setTipoCambio('18.50'));
+        .catch(() => setTipoCambio('18.20'));
     };
 
-    inicializarDashboard();
+    inicializarApp();
     return () => unsubscribeKPI && unsubscribeKPI();
   }, []);
 
-  const abrirManual = async () => {
-    setManualVisible(true);
-    try {
-      const docSnap = await getDoc(doc(db, "configuracion", "manual_texto"));
-      if (docSnap.exists()) setContenidoManual(docSnap.data().contenido);
-    } catch (e) {
-      Alert.alert("Error", "No se pudo cargar el manual.");
-    }
+  const abrirManualDrive = () => {
+    Linking.openURL(DRIVE_PDF_URL).catch(() => {
+      Alert.alert("Error", "No se pudo abrir el manual desde Google Drive.");
+    });
   };
 
-  if (loading) return <View style={styles.loadingCenter}><ActivityIndicator size="large" color="#2196F3" /></View>;
+  if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color="#2196F3"/></View>;
 
   return (
     <ScrollView style={styles.container}>
-      {/* CABECERA ESTILO ORIGINAL (Borde azul) */}
       <View style={styles.headerCard}>
-        <Text style={styles.label}>TÉCNICO RESPONSABLE</Text>
-        <Text style={styles.nameValue}>{userData?.nombre || "Usuario Sistema"}</Text>
+        <Text style={styles.label}>TÉCNICO OPERATIVO</Text>
+        <Text style={styles.nameValue}>{userData?.nombre || "Cargando..."}</Text>
         <View style={styles.rowInfo}>
           <View>
-            <Text style={styles.label}>NÚMERO DE RELOJ</Text>
+            <Text style={styles.label}>ID EMPLEADO</Text>
             <Text style={styles.idValue}>{userData?.numeroReloj || "S/N"}</Text>
           </View>
           <View style={{alignItems: 'flex-end'}}>
@@ -128,18 +106,16 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Dashboard Operativo</Text>
+      <Text style={styles.sectionTitle}>Panel de Control</Text>
       
-      {/* GRID DE MÉTRICAS */}
       <View style={styles.apiRow}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>HORA OFICIAL</Text>
           <Text style={styles.val}>{horaServidor}</Text>
           <Text style={styles.cardDesc}>Juárez</Text>
         </View>
-
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>CLIMA ACTUAL</Text>
+          <Text style={styles.cardLabel}>CLIMA</Text>
           <Text style={styles.val}>{clima.temp}°C</Text>
           <Text style={[styles.cardDesc, {textTransform: 'capitalize'}]}>{clima.desc}</Text>
         </View>
@@ -147,41 +123,28 @@ export default function ProfileScreen({ navigation }) {
 
       <View style={[styles.apiRow, {marginTop: 15}]}>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>TIPO DE CAMBIO</Text>
+          <Text style={styles.cardLabel}>DÓLAR (MXN)</Text>
           <Text style={styles.val}>${tipoCambio}</Text>
-          <Text style={styles.cardDesc}>USD/MXN</Text>
+          <Text style={styles.cardDesc}>Finanzas</Text>
         </View>
-
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>EFICIENCIA KPI</Text>
+          <Text style={styles.cardLabel}>KPI EFICIENCIA</Text>
           <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>{eficiencia}%</Text>
           <Text style={styles.cardDesc}>Firebase</Text>
         </View>
       </View>
 
-      {/* BOTÓN MANUAL CON ICONO ROJO */}
-      <TouchableOpacity style={styles.manualCard} onPress={abrirManual}>
-        <View style={styles.manualIcon}><Text style={{color: '#fff', fontWeight: 'bold'}}>DOC</Text></View>
+      {/* BOTÓN DE MANUAL CONECTADO A GOOGLE DRIVE */}
+      <TouchableOpacity style={styles.manualCard} onPress={abrirManualDrive}>
+        <View style={styles.manualIcon}><Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text></View>
         <View style={{flex: 1}}>
-            <Text style={styles.manualTitle}>Manuales Técnicos</Text>
-            <Text style={styles.manualSub}>Instrucciones Nativo Firestore</Text>
+            <Text style={styles.manualTitle}>Manual de Procedimientos</Text>
+            <Text style={styles.manualSub}>Abrir archivo desde Google Drive</Text>
         </View>
       </TouchableOpacity>
 
-      <Modal visible={manualVisible} animationType="slide">
-        <View style={styles.modalContent}>
-           <Text style={styles.modalHeader}>Guía Técnica</Text>
-           <ScrollView style={styles.modalBody}>
-              <Text style={styles.manualText}>{contenidoManual || "Cargando contenido..."}</Text>
-           </ScrollView>
-           <TouchableOpacity style={styles.closeBtn} onPress={() => setManualVisible(false)}>
-              <Text style={styles.closeBtnText}>CERRAR MANUAL</Text>
-           </TouchableOpacity>
-        </View>
-      </Modal>
-
       <TouchableOpacity style={styles.logoutBtn} onPress={() => { auth.signOut(); navigation.replace('Login'); }}>
-        <Text style={styles.logoutText}>CERRAR SESIÓN SEGURA</Text>
+        <Text style={{color: '#fff', fontWeight: 'bold'}}>CERRAR SESIÓN</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -189,29 +152,22 @@ export default function ProfileScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f2f5', padding: 20 },
-  loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loading: { flex: 1, justifyContent: 'center' },
   headerCard: { backgroundColor: '#fff', padding: 25, borderRadius: 15, marginTop: 30, elevation: 4, borderLeftWidth: 8, borderLeftColor: '#2196F3' },
-  label: { fontSize: 10, color: '#999', fontWeight: 'bold', letterSpacing: 1, marginBottom: 5 },
-  nameValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 15 },
-  rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15 },
-  idValue: { fontSize: 16, fontWeight: 'bold', color: '#555' },
-  puestoValue: { fontSize: 13, color: '#2196F3', fontWeight: 'bold', textTransform: 'uppercase' },
-  sectionTitle: { marginVertical: 20, fontSize: 16, fontWeight: 'bold', color: '#444' },
+  label: { fontSize: 10, color: '#999', fontWeight: 'bold' },
+  nameValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+  rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10 },
+  idValue: { fontSize: 16, fontWeight: 'bold' },
+  puestoValue: { fontSize: 13, color: '#2196F3', fontWeight: 'bold' },
+  sectionTitle: { marginVertical: 20, fontSize: 14, fontWeight: 'bold', color: '#666' },
   apiRow: { flexDirection: 'row', justifyContent: 'space-between' },
   card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '48%', alignItems: 'center', elevation: 2 },
-  cardLabel: { fontSize: 10, color: '#888', fontWeight: 'bold', marginBottom: 8 },
-  val: { fontSize: 22, fontWeight: 'bold', color: '#2196F3' },
-  cardDesc: { fontSize: 9, color: '#bbb', marginTop: 5 },
-  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
-  manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#FF5252', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  manualTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  cardLabel: { fontSize: 10, color: '#888', fontWeight: 'bold' },
+  val: { fontSize: 24, fontWeight: 'bold', color: '#2196F3' },
+  cardDesc: { fontSize: 9, color: '#bbb' },
+  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+  manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#E53935', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  manualTitle: { fontSize: 16, fontWeight: 'bold' },
   manualSub: { fontSize: 12, color: '#999' },
-  logoutBtn: { backgroundColor: '#333', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 50 },
-  logoutText: { color: 'white', fontWeight: 'bold' },
-  modalContent: { flex: 1, backgroundColor: '#fff', padding: 30, paddingTop: 60 },
-  modalHeader: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#2196F3' },
-  modalBody: { flex: 1, backgroundColor: '#f9f9f9', borderRadius: 10, padding: 15 },
-  manualText: { fontSize: 16, color: '#333', lineHeight: 24 },
-  closeBtn: { backgroundColor: '#1a237e', padding: 20, borderRadius: 12, alignItems: 'center', marginTop: 20 },
-  closeBtnText: { color: '#fff', fontWeight: 'bold' }
+  logoutBtn: { backgroundColor: '#333', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 50 }
 });

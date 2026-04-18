@@ -1,9 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 
-// Tus nuevas credenciales de ProjectCompany-V2
+// Credenciales de ProjectCompany-431b9
 const firebaseConfig = {
   apiKey: "AIzaSyDZZkEFJjGKJKDNPHQigvpmbDwGQREQqHs",
   authDomain: "projectcompany-431b9.firebaseapp.com",
@@ -14,10 +13,8 @@ const firebaseConfig = {
   measurementId: "G-PCE1VB21NS"
 };
 
-// Inicializamos Firebase
 const app = initializeApp(firebaseConfig);
 
-// Exportamos los servicios listos para usar
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
+// Storage eliminado para evitar costos y errores de librería

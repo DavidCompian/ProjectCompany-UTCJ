@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
-
-// Importaciones de Firebase
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Linking } from 'react-native';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
@@ -11,7 +9,6 @@ export default function ProfileScreen({ navigation }) {
   const [eficiencia, setEficiencia] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // META DIARIA: Puedes ajustarla según lo que pida el proyecto (ej. 10 fixturas al día)
   const META_DIARIA = 10;
 
   useEffect(() => {
@@ -19,17 +16,12 @@ export default function ProfileScreen({ navigation }) {
 
     const fetchIndustrialData = async () => {
       try {
-        // 1. OBTENER DATOS DEL TÉCNICO (Carga inicial)
         const userAuth = auth.currentUser;
         if (userAuth) {
           const idUsuario = userAuth.email.split('@')[0].toUpperCase();
           const docSnap = await getDoc(doc(db, "usuarios", idUsuario));
-          if (docSnap.exists()) {
-            setUserData(docSnap.data());
-          }
+          if (docSnap.exists()) setUserData(docSnap.data());
 
-          // 2. CONFIGURAR ESCUCHA EN TIEMPO REAL PARA EL KPI
-          // Buscamos registros donde el usuario es el actual y el estado es 'finalizado'
           const q = query(
             collection(db, "registros_escaneo"),
             where("usuarioId", "==", idUsuario),
@@ -37,52 +29,49 @@ export default function ProfileScreen({ navigation }) {
           );
 
           unsubscribeKPI = onSnapshot(q, (querySnapshot) => {
-            const totalCompletados = querySnapshot.size;
-            // Cálculo de eficiencia: (Realizado / Meta) * 100
-            let calculo = (totalCompletados / META_DIARIA) * 100;
-            if (calculo > 100) calculo = 100; // Tope al 100%
-            
-            setEficiencia(calculo.toFixed(0)); // Sin decimales
+            const total = querySnapshot.size;
+            let calculo = (total / META_DIARIA) * 100;
+            setEficiencia(calculo > 100 ? 100 : calculo.toFixed(0));
           });
         }
 
-        // 3. API DE TIEMPO (Hora oficial de la planta)
         const timeRes = await fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua');
         const timeData = await timeRes.json();
-        const horaResumen = new Date(timeData.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setHoraServidor(horaResumen);
+        setHoraServidor(new Date(timeData.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
       } catch (e) {
-        console.log("Error en carga técnica:", e);
+        console.log("Error V2:", e);
       } finally {
         setLoading(false);
       }
     };
 
     fetchIndustrialData();
-
-    // Limpieza al desmontar el componente
-    return () => {
-      if (unsubscribeKPI) unsubscribeKPI();
-    };
+    return () => unsubscribeKPI && unsubscribeKPI();
   }, []);
 
-  if (loading) {
-    return (
-      <View style={styles.loadingCenter}>
-        <ActivityIndicator size="large" color="#2196F3" />
-        <Text style={{marginTop: 10, color: '#666'}}>Sincronizando con Servidores...</Text>
-      </View>
-    );
-  }
+  const abrirManualDinamico = async () => {
+    try {
+      const docSnap = await getDoc(doc(db, "configuracion", "manual"));
+      if (docSnap.exists()) {
+        const url = docSnap.data().url;
+        // En Web Linking siempre intenta abrir, pero validamos con try/catch
+        await Linking.openURL(url);
+      } else {
+        Alert.alert("Aviso", "No hay un manual activo en ProjectCompany-V2.");
+      }
+    } catch (e) {
+      Alert.alert("Error", "No se pudo abrir el manual PDF.");
+    }
+  };
+
+  if (loading) return <View style={styles.loadingCenter}><ActivityIndicator size="large" color="#2196F3" /></View>;
 
   return (
     <ScrollView style={styles.container}>
-      {/* SECCIÓN DE IDENTIDAD INDUSTRIAL */}
       <View style={styles.headerCard}>
         <Text style={styles.label}>TÉCNICO RESPONSABLE</Text>
-        <Text style={styles.nameValue}>{userData?.nombre || "Cargando..."}</Text>
-        
+        <Text style={styles.nameValue}>{userData?.nombre || "Usuario Sistema"}</Text>
         <View style={styles.rowInfo}>
           <View>
             <Text style={styles.label}>NÚMERO DE RELOJ</Text>
@@ -95,9 +84,8 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Panel de Control Operativo</Text>
+      <Text style={styles.sectionTitle}>Panel Operativo V2</Text>
       
-      {/* TARJETAS DE APIS INDUSTRIALES */}
       <View style={styles.apiRow}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>HORA SERVIDOR</Text>
@@ -107,34 +95,20 @@ export default function ProfileScreen({ navigation }) {
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>EFICIENCIA KPI</Text>
-          <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>
-            {eficiencia}%
-          </Text>
+          <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>{eficiencia}%</Text>
           <Text style={styles.cardDesc}>Meta: 90%</Text>
         </View>
       </View>
 
-      {/* BOTÓN DE MANUALES */}
-      <TouchableOpacity 
-        style={styles.manualCard}
-        onPress={() => Alert.alert("ProjectCompany", "Accediendo a la base de datos de manuales técnicos...")}
-      >
-        <View style={styles.manualIcon}>
-            <Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text>
-        </View>
+      <TouchableOpacity style={styles.manualCard} onPress={abrirManualDinamico}>
+        <View style={styles.manualIcon}><Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text></View>
         <View>
             <Text style={styles.manualTitle}>Manuales Técnicos</Text>
-            <Text style={styles.manualSub}>Esquemas de fixturas y sensores</Text>
+            <Text style={styles.manualSub}>Ver esquemas y sensores V2</Text>
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity 
-        style={styles.logoutBtn} 
-        onPress={() => {
-          auth.signOut();
-          navigation.replace('Login');
-        }}
-      >
+      <TouchableOpacity style={styles.logoutBtn} onPress={() => { auth.signOut(); navigation.replace('Login'); }}>
         <Text style={styles.logoutText}>CERRAR SESIÓN SEGURA</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -144,15 +118,7 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f2f5', padding: 20 },
   loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerCard: { 
-    backgroundColor: '#fff', 
-    padding: 25, 
-    borderRadius: 15, 
-    marginTop: 30, 
-    elevation: 4,
-    borderLeftWidth: 8,
-    borderLeftColor: '#2196F3'
-  },
+  headerCard: { backgroundColor: '#fff', padding: 25, borderRadius: 15, marginTop: 30, elevation: 4, borderLeftWidth: 8, borderLeftColor: '#2196F3' },
   label: { fontSize: 10, color: '#999', fontWeight: 'bold', letterSpacing: 1, marginBottom: 5 },
   nameValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 15 },
   rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15 },

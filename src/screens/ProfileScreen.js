@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Modal } from 'react-native';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
@@ -8,8 +8,11 @@ export default function ProfileScreen({ navigation }) {
   const [horaServidor, setHoraServidor] = useState(null);
   const [eficiencia, setEficiencia] = useState(0);
   const [loading, setLoading] = useState(true);
+  
+  // Estados para el Manual Interno
+  const [manualVisible, setManualVisible] = useState(false);
+  const [contenidoManual, setContenidoManual] = useState('Cargando instrucciones...');
 
-  // Meta de fixturas por turno para el cálculo del KPI
   const META_DIARIA = 10;
 
   useEffect(() => {
@@ -19,14 +22,10 @@ export default function ProfileScreen({ navigation }) {
       try {
         const userAuth = auth.currentUser;
         if (userAuth) {
-          // 1. Obtener datos del perfil del técnico
           const idUsuario = userAuth.email.split('@')[0].toUpperCase();
           const docSnap = await getDoc(doc(db, "usuarios", idUsuario));
-          if (docSnap.exists()) {
-            setUserData(docSnap.data());
-          }
+          if (docSnap.exists()) setUserData(docSnap.data());
 
-          // 2. Escucha en tiempo real de registros finalizados HOY
           const q = query(
             collection(db, "registros_escaneo"),
             where("usuarioId", "==", idUsuario),
@@ -40,70 +39,42 @@ export default function ProfileScreen({ navigation }) {
           });
         }
 
-        // 3. Obtener hora oficial de Ciudad Juárez (GMT-6)
         const timeRes = await fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua');
         const timeData = await timeRes.json();
-        const fechaObj = new Date(timeData.datetime);
-        setHoraServidor(fechaObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        setHoraServidor(new Date(timeData.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
       } catch (e) {
-        console.log("Error en sincronización V2:", e);
+        console.log("Error V2:", e);
       } finally {
         setLoading(false);
       }
     };
 
     fetchIndustrialData();
-    
-    // Limpieza al salir de la pantalla
-    return () => {
-      if (unsubscribeKPI) unsubscribeKPI();
-    };
+    return () => unsubscribeKPI && unsubscribeKPI();
   }, []);
 
-  const abrirManualDinamico = async () => {
+  const abrirManualInterno = async () => {
+    setManualVisible(true);
     try {
-      const docSnap = await getDoc(doc(db, "configuracion", "manual"));
+      const docSnap = await getDoc(doc(db, "configuracion", "manual_texto"));
       if (docSnap.exists()) {
-        let url = docSnap.data().url;
-
-        // TRUCO DE COMPATIBILIDAD PARA MÓVILES (Google Drive)
-        if (url.includes('drive.google.com')) {
-           url = url.replace('/view?usp=sharing', '/preview');
-           url = url.replace('/view', '/preview');
-        }
-
-        // Abrir según la plataforma para evitar bloqueos
-        if (Platform.OS === 'web') {
-          // Forzamos apertura en pestaña nueva para que el móvil no cierre la app
-          window.open(url, '_blank');
-        } else {
-          await Linking.openURL(url);
-        }
+        setContenidoManual(docSnap.data().contenido);
       } else {
-        Alert.alert("Aviso", "No hay un manual activo cargado en el sistema.");
+        setContenidoManual("No hay instrucciones cargadas por el administrador.");
       }
     } catch (e) {
-      Alert.alert("Error", "No se pudo abrir el manual. Verifique su conexión.");
+      setContenidoManual("Error al conectar con la base de datos de manuales.");
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingCenter}>
-        <ActivityIndicator size="large" color="#2196F3" />
-        <Text style={{marginTop: 10, color: '#666'}}>Sincronizando Panel...</Text>
-      </View>
-    );
-  }
+  if (loading) return <View style={styles.loadingCenter}><ActivityIndicator size="large" color="#2196F3" /></View>;
 
   return (
     <ScrollView style={styles.container}>
-      {/* TARJETA DE IDENTIFICACIÓN */}
       <View style={styles.headerCard}>
         <Text style={styles.label}>TÉCNICO RESPONSABLE</Text>
         <Text style={styles.nameValue}>{userData?.nombre || "Usuario Sistema"}</Text>
-        
         <View style={styles.rowInfo}>
           <View>
             <Text style={styles.label}>NÚMERO DE RELOJ</Text>
@@ -111,49 +82,49 @@ export default function ProfileScreen({ navigation }) {
           </View>
           <View style={{alignItems: 'flex-end'}}>
             <Text style={styles.label}>PUESTO</Text>
-            <Text style={styles.puestoValue}>{userData?.puesto || "Técnico"}</Text>
+            <Text style={styles.puestoValue}>{userData?.puesto || "Mantenimiento"}</Text>
           </View>
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Panel Operativo V2</Text>
+      <Text style={styles.sectionTitle}>Panel Operativo</Text>
       
-      {/* KPIS Y ESTADO */}
       <View style={styles.apiRow}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>HORA SERVIDOR</Text>
           <Text style={styles.val}>{horaServidor}</Text>
-          <Text style={styles.cardDesc}>Juárez (Sincronizado)</Text>
+          <Text style={styles.cardDesc}>Juárez (GMT-6)</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>EFICIENCIA KPI</Text>
-          <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>
-            {eficiencia}%
-          </Text>
+          <Text style={[styles.val, {color: eficiencia >= 90 ? '#4CAF50' : '#FF9800'}]}>{eficiencia}%</Text>
           <Text style={styles.cardDesc}>Meta: 90%</Text>
         </View>
       </View>
 
-      {/* BOTÓN MANUAL TÉCNICO */}
-      <TouchableOpacity style={styles.manualCard} onPress={abrirManualDinamico}>
-        <View style={styles.manualIcon}>
-          <Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text>
-        </View>
-        <View style={{ flex: 1 }}>
+      <TouchableOpacity style={styles.manualCard} onPress={abrirManualInterno}>
+        <View style={styles.manualIcon}><Text style={{color: '#fff', fontWeight: 'bold'}}>DOC</Text></View>
+        <View style={{flex: 1}}>
             <Text style={styles.manualTitle}>Manuales Técnicos</Text>
-            <Text style={styles.manualSub}>Toque para abrir en visor móvil</Text>
+            <Text style={styles.manualSub}>Instrucciones de Fixturas y Sensores</Text>
         </View>
       </TouchableOpacity>
 
-      {/* CERRAR SESIÓN */}
-      <TouchableOpacity 
-        style={styles.logoutBtn} 
-        onPress={() => {
-          auth.signOut();
-          navigation.replace('Login');
-        }}
-      >
+      {/* MODAL DEL MANUAL: FUNCIONA EN TODO MÓVIL Y WEB */}
+      <Modal visible={manualVisible} animationType="slide" transparent={false}>
+        <View style={styles.modalContent}>
+           <Text style={styles.modalHeader}>Manual Técnico</Text>
+           <ScrollView style={styles.modalBody}>
+              <Text style={styles.manualText}>{contenidoManual}</Text>
+           </ScrollView>
+           <TouchableOpacity style={styles.closeBtn} onPress={() => setManualVisible(false)}>
+              <Text style={styles.closeBtnText}>CERRAR MANUAL</Text>
+           </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <TouchableOpacity style={styles.logoutBtn} onPress={() => { auth.signOut(); navigation.replace('Login'); }}>
         <Text style={styles.logoutText}>CERRAR SESIÓN SEGURA</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -163,66 +134,30 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f2f5', padding: 20 },
   loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerCard: { 
-    backgroundColor: '#fff', 
-    padding: 25, 
-    borderRadius: 15, 
-    marginTop: 30, 
-    elevation: 4, 
-    borderLeftWidth: 8, 
-    borderLeftColor: '#2196F3' 
-  },
-  label: { fontSize: 10, color: '#999', fontWeight: 'bold', letterSpacing: 1, marginBottom: 5 },
+  headerCard: { backgroundColor: '#fff', padding: 25, borderRadius: 15, marginTop: 30, elevation: 4, borderLeftWidth: 8, borderLeftColor: '#2196F3' },
+  label: { fontSize: 10, color: '#999', fontWeight: 'bold', marginBottom: 5 },
   nameValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 15 },
-  rowInfo: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    borderTopWidth: 1, 
-    borderTopColor: '#f0f0f0', 
-    paddingTop: 15 
-  },
+  rowInfo: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15 },
   idValue: { fontSize: 16, fontWeight: 'bold', color: '#555' },
   puestoValue: { fontSize: 13, color: '#2196F3', fontWeight: 'bold', textTransform: 'uppercase' },
   sectionTitle: { marginVertical: 20, fontSize: 16, fontWeight: 'bold', color: '#444' },
   apiRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  card: { 
-    backgroundColor: '#fff', 
-    padding: 20, 
-    borderRadius: 15, 
-    width: '48%', 
-    alignItems: 'center', 
-    elevation: 2 
-  },
+  card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '48%', alignItems: 'center', elevation: 2 },
   cardLabel: { fontSize: 10, color: '#888', fontWeight: 'bold', marginBottom: 8 },
   val: { fontSize: 24, fontWeight: 'bold', color: '#2196F3' },
   cardDesc: { fontSize: 9, color: '#bbb', marginTop: 5 },
-  manualCard: { 
-    backgroundColor: '#fff', 
-    marginTop: 20, 
-    padding: 20, 
-    borderRadius: 15, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    elevation: 2 
-  },
-  manualIcon: { 
-    width: 50, 
-    height: 50, 
-    borderRadius: 10, 
-    backgroundColor: '#FF5252', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginRight: 15 
-  },
+  manualCard: { backgroundColor: '#fff', marginTop: 20, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+  manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#FF5252', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   manualTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
   manualSub: { fontSize: 12, color: '#999' },
-  logoutBtn: { 
-    backgroundColor: '#333', 
-    padding: 18, 
-    borderRadius: 12, 
-    alignItems: 'center', 
-    marginTop: 30, 
-    marginBottom: 50 
-  },
-  logoutText: { color: 'white', fontWeight: 'bold' }
+  logoutBtn: { backgroundColor: '#333', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 50 },
+  logoutText: { color: 'white', fontWeight: 'bold' },
+  
+  // Estilos del Modal
+  modalContent: { flex: 1, backgroundColor: '#fff', padding: 30, paddingTop: 60 },
+  modalHeader: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#2196F3' },
+  modalBody: { flex: 1, backgroundColor: '#f9f9f9', borderRadius: 10, padding: 15 },
+  manualText: { fontSize: 16, color: '#333', lineHeight: 24 },
+  closeBtn: { backgroundColor: '#333', padding: 20, borderRadius: 12, alignItems: 'center', marginTop: 20 },
+  closeBtnText: { color: '#fff', fontWeight: 'bold' }
 });

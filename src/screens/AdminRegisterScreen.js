@@ -1,24 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
-import { Ionicons } from '@expo/vector-icons'; // Para un icono de volver
+import { Ionicons } from '@expo/vector-icons';
 
 export default function AdminRegisterScreen({ navigation }) {
   const [nombre, setNombre] = useState('');
   const [numeroReloj, setNumeroReloj] = useState('');
   const [puesto, setPuesto] = useState('');
   const [password, setPassword] = useState('');
-  const [urlManual, setUrlManual] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [linkSaving, setLinkSaving] = useState(false);
+  const [textoManual, setTextoManual] = useState(''); // Ahora es texto, no link
+  const [loading, setLoading] = useState(false);
+  const [savingManual, setSavingManual] = useState(false);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
       Alert.alert("Acceso Prohibido", "Esta función es exclusiva para PC.");
       navigation.goBack();
     }
+
+    // Cargar el texto actual que está en la base de datos para poder editarlo
+    const cargarContenidoManual = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "configuracion", "manual_texto"));
+        if (docSnap.exists()) {
+          setTextoManual(docSnap.data().contenido);
+        }
+      } catch (e) {
+        console.log("Error al cargar manual:", e);
+      }
+    };
+    cargarContenidoManual();
   }, []);
 
   const registrarPersonal = async () => {
@@ -30,7 +43,7 @@ export default function AdminRegisterScreen({ navigation }) {
       return;
     }
 
-    setUploading(true);
+    setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, emailFinal, password.trim());
       await setDoc(doc(db, "usuarios", idLimpio), {
@@ -40,38 +53,39 @@ export default function AdminRegisterScreen({ navigation }) {
         rol: 'operador',
         fechaRegistro: new Date().toISOString()
       });
-      Alert.alert("Éxito", "Usuario registrado correctamente.");
+      Alert.alert("Éxito", "Técnico registrado correctamente.");
       setNombre(''); setNumeroReloj(''); setPuesto(''); setPassword('');
     } catch (error) {
       Alert.alert("Error", "No se pudo completar el registro.");
     } finally {
-      setUploading(false);
+      setLoading(false);
     }
   };
 
-  const guardarLinkManual = async () => {
-    if (!urlManual.includes('http')) {
-      Alert.alert("Error", "Pega un enlace válido de Google Drive.");
+  const guardarContenidoManual = async () => {
+    if (textoManual.length < 10) {
+      Alert.alert("Error", "El contenido del manual es muy corto.");
       return;
     }
-    setLinkSaving(true);
+
+    setSavingManual(true);
     try {
-      await setDoc(doc(db, "configuracion", "manual"), {
-        url: urlManual.trim(),
+      // Guardamos el texto plano en Firestore. Esto es gratis y 100% compatible.
+      await setDoc(doc(db, "configuracion", "manual_texto"), {
+        contenido: textoManual,
         ultimaActualizacion: new Date().toISOString()
       }, { merge: true });
-      Alert.alert("Éxito", "Enlace actualizado.");
-      setUrlManual('');
+      
+      Alert.alert("Éxito", "Contenido del manual actualizado para todos los técnicos.");
     } catch (e) {
-      Alert.alert("Error", "No se pudo guardar.");
+      Alert.alert("Error", "No se pudo guardar el contenido.");
     } finally {
-      setLinkSaving(false);
+      setSavingManual(false);
     }
   };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* BOTÓN PARA SALIR / VOLVER AL LOGIN */}
       <TouchableOpacity 
         style={styles.backButton} 
         onPress={() => navigation.navigate('Login')}
@@ -82,6 +96,7 @@ export default function AdminRegisterScreen({ navigation }) {
 
       <Text style={styles.title}>Panel Administrativo V2</Text>
       
+      {/* SECCIÓN 1: REGISTRO DE USUARIOS */}
       <View style={styles.section}>
         <Text style={styles.subtitle}>Alta de Personal</Text>
         <TextInput style={styles.input} placeholder="Nombre del Técnico" value={nombre} onChangeText={setNombre} />
@@ -89,16 +104,32 @@ export default function AdminRegisterScreen({ navigation }) {
         <TextInput style={styles.input} placeholder="Puesto" value={puesto} onChangeText={setPuesto} />
         <TextInput style={styles.input} placeholder="Contraseña" value={password} onChangeText={setPassword} secureTextEntry />
 
-        <TouchableOpacity style={styles.button} onPress={registrarPersonal} disabled={uploading}>
-          {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>REGISTRAR TÉCNICO</Text>}
+        <TouchableOpacity style={styles.button} onPress={registrarPersonal} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>REGISTRAR TÉCNICO</Text>}
         </TouchableOpacity>
       </View>
 
+      {/* SECCIÓN 2: MANUAL TÉCNICO (TEXTO) */}
       <View style={[styles.section, { marginTop: 30, paddingBottom: 50 }]}>
-        <Text style={[styles.subtitle, { color: '#2196F3' }]}>Enlace Manual Técnico</Text>
-        <TextInput style={styles.input} placeholder="Link de Google Drive" value={urlManual} onChangeText={setUrlManual} />
-        <TouchableOpacity style={[styles.button, { backgroundColor: '#2196F3' }]} onPress={guardarLinkManual} disabled={linkSaving}>
-          {linkSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>ACTUALIZAR ENLACE</Text>}
+        <Text style={[styles.subtitle, { color: '#2196F3' }]}>Editor de Manual Técnico</Text>
+        <Text style={styles.infoText}>Escriba las instrucciones, esquemas y guías de sensores aquí abajo:</Text>
+        
+        <TextInput 
+          style={[styles.input, styles.textArea]} 
+          placeholder="Ej: Paso 1: Verifique el sensor inductivo..." 
+          value={textoManual} 
+          onChangeText={setTextoManual}
+          multiline={true}
+          numberOfLines={10}
+          textAlignVertical="top"
+        />
+
+        <TouchableOpacity 
+          style={[styles.button, { backgroundColor: '#2196F3' }]} 
+          onPress={guardarContenidoManual} 
+          disabled={savingManual}
+        >
+          {savingManual ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>ACTUALIZAR MANUAL EN LA APP</Text>}
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -116,10 +147,12 @@ const styles = StyleSheet.create({
     zIndex: 10
   },
   backText: { marginLeft: 5, fontSize: 16, color: '#333', fontWeight: '500' },
-  section: { width: '100%', maxWidth: 500, alignSelf: 'center', marginTop: 20 },
+  section: { width: '100%', maxWidth: 600, alignSelf: 'center', marginTop: 20 },
   title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 20, marginTop: 40 },
   subtitle: { fontSize: 16, textAlign: 'center', color: '#4caf50', marginBottom: 20, fontWeight: 'bold', textTransform: 'uppercase' },
   input: { backgroundColor: '#f9f9f9', padding: 15, borderRadius: 10, marginBottom: 15, borderWidth: 1, borderColor: '#eee' },
-  button: { backgroundColor: '#4caf50', padding: 20, borderRadius: 10, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: 'bold' }
+  textArea: { height: 200, fontSize: 14, lineHeight: 20 },
+  button: { backgroundColor: '#4caf50', padding: 20, borderRadius: 10, alignItems: 'center', elevation: 2 },
+  buttonText: { color: '#fff', fontWeight: 'bold' },
+  infoText: { fontSize: 12, color: '#666', marginBottom: 10, textAlign: 'center' }
 });

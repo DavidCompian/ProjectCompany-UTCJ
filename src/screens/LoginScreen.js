@@ -13,20 +13,27 @@ import {
   KeyboardAvoidingView 
 } from 'react-native';
 
+// Importaciones de Firebase
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore'; 
 import { auth, db } from '../firebaseConfig'; 
 
+// Importación del logo
+import LogoImg from '../../assets/logo.png';
+
 export default function LoginScreen({ navigation }) {
   const [numeroReloj, setNumeroReloj] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const irARegistro = () => {
+    // RESTRICCIÓN: Solo permite si es PC (Web y pantalla ancha)
     const esPC = Platform.OS === 'web' && Dimensions.get('window').width >= 768;
+
     if (esPC) {
       navigation.navigate('AdminRegister');
     } else {
-      Alert.alert("Acceso Denegado", "Solo desde PC administrativo.");
+      Alert.alert("Acceso Denegado", "El registro de personal solo se permite desde el panel administrativo en PC.");
     }
   };
 
@@ -39,99 +46,93 @@ export default function LoginScreen({ navigation }) {
       return;
     }
 
+    setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, emailCorp, password);
       const docSnap = await getDoc(doc(db, "usuarios", idUsuario));
-      navigation.replace('MainApp', { user: docSnap.exists() ? docSnap.data() : { nombre: "Técnico", numeroReloj: idUsuario, puesto: "Operador" } });
+
+      if (docSnap.exists()) {
+        navigation.replace('MainApp', { user: docSnap.data() });
+      } else {
+        navigation.replace('MainApp', { 
+          user: { nombre: "Técnico", numeroReloj: idUsuario, puesto: "Operador" } 
+        });
+      }
     } catch (error) {
-      Alert.alert("Error", "Credenciales incorrectas.");
+      Alert.alert("Error", "Número de reloj o contraseña incorrectos.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <View style={styles.mainContainer}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.mainContainer}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="always" // Corrige el problema del clic en Web
       >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContainer}
-          // ESTO ES CLAVE: En web, 'none' evita que el scroll bloquee los clics
-          touchAction="none" 
-        >
-          <View style={styles.card}>
-            <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000} activeOpacity={0.8}>
-              <Image 
-                source={require('../../assets/logo.png')} 
-                style={styles.logo} 
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
+        <View style={styles.card}>
+          
+          {/* LOGO CON RUTA SECRETA (3 segundos presionado) */}
+          <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000} activeOpacity={0.8}>
+            <Image 
+              source={LogoImg} 
+              style={styles.logo} 
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          
+          <View style={styles.form}>
+            <TextInput 
+              style={styles.input} 
+              placeholder="Número de Reloj" 
+              value={numeroReloj}
+              onChangeText={setNumeroReloj} 
+              autoCapitalize="characters" 
+              placeholderTextColor="#999"
+              cursorColor="#2196F3"
+            />
+            <TextInput 
+              style={styles.input} 
+              placeholder="Contraseña" 
+              value={password}
+              onChangeText={setPassword} 
+              secureTextEntry 
+              placeholderTextColor="#999"
+              cursorColor="#2196F3"
+            />
             
-            <View style={styles.form}>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Número de Reloj" 
-                value={numeroReloj}
-                onChangeText={setNumeroReloj} 
-                autoCapitalize="characters" 
-                placeholderTextColor="#999"
-                // Forzamos el comportamiento de puntero en Web
-                cursorColor="#2196F3"
-              />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Contraseña" 
-                value={password}
-                onChangeText={setPassword} 
-                secureTextEntry 
-                placeholderTextColor="#999"
-                cursorColor="#2196F3"
-              />
-              
-              <TouchableOpacity style={styles.button} onPress={handleLogin}>
+            <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+              {loading ? (
+                <Text style={styles.buttonText}>CARGANDO...</Text>
+              ) : (
                 <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
-              </TouchableOpacity>
-            </View>
-
-            {Platform.OS === 'web' && Dimensions.get('window').width >= 768 && (
-              <Text style={styles.hint}>Modo PC: Mantén presionado el logo para gestionar</Text>
-            )}
+              )}
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+
+          {Platform.OS === 'web' && Dimensions.get('window').width >= 768 && (
+            <Text style={styles.hint}>Modo Administrativo Detectado</Text>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: '#fff' },
-  scrollContainer: { 
-    flexGrow: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    paddingVertical: 20
-  },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 },
   card: { width: '90%', maxWidth: 450, alignItems: 'center', padding: 20 },
   logo: { width: 280, height: 200, marginBottom: 20 },
   form: { width: '100%' },
   input: { 
-    backgroundColor: '#f5f5f5', 
-    padding: 18, 
-    borderRadius: 12, 
-    marginBottom: 15, 
-    borderWidth: 1, 
-    borderColor: '#eee', 
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#000',
-    // ESTO ELIMINA EL BLOQUEO EN WEB:
-    ...Platform.select({
-      web: {
-        outlineStyle: 'none',
-        cursor: 'text', // Fuerza a que aparezca el cursor de texto
-      }
-    })
+    backgroundColor: '#f5f5f5', padding: 18, borderRadius: 12, marginBottom: 15, 
+    borderWidth: 1, borderColor: '#eee', textAlign: 'center', fontSize: 16, color: '#000',
+    ...Platform.select({ web: { outlineStyle: 'none' } }) // Quita el borde azul en Web
   },
   button: { backgroundColor: '#2196F3', padding: 20, borderRadius: 12, alignItems: 'center', marginTop: 10 },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 18 },

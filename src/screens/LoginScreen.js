@@ -28,12 +28,17 @@ export default function LoginScreen({ navigation }) {
 
   const irARegistro = () => {
     // RESTRICCIÓN: Solo permite si es PC (Web y pantalla ancha)
-    const esPC = Platform.OS === 'web' && Dimensions.get('window').width >= 768;
+    const width = Dimensions.get('window').width;
+    const esPC = Platform.OS === 'web' && width >= 768;
 
     if (esPC) {
+      // Navega a la pantalla administrativa
       navigation.navigate('AdminRegister');
     } else {
-      Alert.alert("Acceso Denegado", "El registro de personal solo se permite desde el panel administrativo en PC.");
+      Alert.alert(
+        "Acceso Denegado", 
+        "El registro de personal y gestión de manuales solo se permite desde el panel administrativo en PC."
+      );
     }
   };
 
@@ -54,11 +59,13 @@ export default function LoginScreen({ navigation }) {
       if (docSnap.exists()) {
         navigation.replace('MainApp', { user: docSnap.data() });
       } else {
+        // Fallback en caso de que no existan datos adicionales en Firestore
         navigation.replace('MainApp', { 
           user: { nombre: "Técnico", numeroReloj: idUsuario, puesto: "Operador" } 
         });
       }
     } catch (error) {
+      console.log(error);
       Alert.alert("Error", "Número de reloj o contraseña incorrectos.");
     } finally {
       setLoading(false);
@@ -72,12 +79,16 @@ export default function LoginScreen({ navigation }) {
     >
       <ScrollView 
         contentContainerStyle={styles.scrollContainer}
-        keyboardShouldPersistTaps="always" // Corrige el problema del clic en Web
+        keyboardShouldPersistTaps="always" 
       >
         <View style={styles.card}>
           
           {/* LOGO CON RUTA SECRETA (3 segundos presionado) */}
-          <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000} activeOpacity={0.8}>
+          <TouchableOpacity 
+            onLongPress={irARegistro} 
+            delayLongPress={3000} 
+            activeOpacity={0.8}
+          >
             <Image 
               source={LogoImg} 
               style={styles.logo} 
@@ -105,7 +116,11 @@ export default function LoginScreen({ navigation }) {
               cursorColor="#2196F3"
             />
             
-            <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+            <TouchableOpacity 
+              style={styles.button} 
+              onPress={handleLogin} 
+              disabled={loading}
+            >
               {loading ? (
                 <Text style={styles.buttonText}>CARGANDO...</Text>
               ) : (
@@ -114,6 +129,7 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
+          {/* Indicador visual de modo administrativo para el navegador */}
           {Platform.OS === 'web' && Dimensions.get('window').width >= 768 && (
             <Text style={styles.hint}>Modo Administrativo Detectado</Text>
           )}
@@ -130,11 +146,24 @@ const styles = StyleSheet.create({
   logo: { width: 280, height: 200, marginBottom: 20 },
   form: { width: '100%' },
   input: { 
-    backgroundColor: '#f5f5f5', padding: 18, borderRadius: 12, marginBottom: 15, 
-    borderWidth: 1, borderColor: '#eee', textAlign: 'center', fontSize: 16, color: '#000',
-    ...Platform.select({ web: { outlineStyle: 'none' } }) // Quita el borde azul en Web
+    backgroundColor: '#f5f5f5', 
+    padding: 18, 
+    borderRadius: 12, 
+    marginBottom: 15, 
+    borderWidth: 1, 
+    borderColor: '#eee', 
+    textAlign: 'center', 
+    fontSize: 16, 
+    color: '#000',
+    ...Platform.select({ web: { outlineStyle: 'none' } }) 
   },
-  button: { backgroundColor: '#2196F3', padding: 20, borderRadius: 12, alignItems: 'center', marginTop: 10 },
+  button: { 
+    backgroundColor: '#2196F3', 
+    padding: 20, 
+    borderRadius: 12, 
+    alignItems: 'center', 
+    marginTop: 10 
+  },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 18 },
   hint: { textAlign: 'center', marginTop: 25, color: '#ccc', fontSize: 11 }
 });

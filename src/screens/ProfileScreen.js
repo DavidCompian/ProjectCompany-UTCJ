@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons'; // Importación necesaria para los iconos
 
 export default function ProfileScreen({ navigation }) {
   const [userData, setUserData] = useState(null);
@@ -13,25 +14,23 @@ export default function ProfileScreen({ navigation }) {
   const [historial, setHistorial] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-// Función para calcular cuánto tardó el técnico (Optimizada para pruebas rápidas)
+  const META_DIARIA = 10;
+
+  // Función para calcular duración
   const calcularDuracion = (inicio, fin) => {
     if (!inicio || !fin) return "N/A";
     try {
       const d1 = inicio.seconds ? new Date(inicio.seconds * 1000) : new Date(inicio);
       const d2 = fin.seconds ? new Date(fin.seconds * 1000) : new Date(fin);
       const diffMs = Math.abs(d2 - d1);
-      const diffMins = Math.round(diffMs / 60000); // Convierte a minutos
+      const diffMins = Math.round(diffMs / 60000); 
       
-      // EL TRUCO ESTÁ AQUÍ: Si lo haces rapidísimo, muestra "< 1 min"
       if (diffMins === 0) return "< 1 min"; 
-      
       if (diffMins < 60) return `${diffMins} min`;
       const hrs = Math.floor(diffMins / 60);
       const mins = diffMins % 60;
       return `${hrs}h ${mins}m`;
-    } catch (e) {
-      return "N/A";
-    }
+    } catch (e) { return "N/A"; }
   };
 
   useEffect(() => {
@@ -40,7 +39,6 @@ export default function ProfileScreen({ navigation }) {
 
     const inicializarApp = async () => {
       try {
-        // --- 1. APIs EXTERNAS (Requisito RA) ---
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({});
@@ -49,14 +47,12 @@ export default function ProfileScreen({ navigation }) {
         fetchHora();
         fetchDolar();
 
-        // --- 2. DATOS DEL USUARIO ---
         const userAuth = auth.currentUser;
         if (userAuth) {
           const idUsuario = userAuth.email.split('@')[0].toUpperCase();
           const docSnap = await getDoc(doc(db, "usuarios", idUsuario));
           if (docSnap.exists()) setUserData(docSnap.data());
 
-          // --- 3. KPI EN TIEMPO REAL ---
           const qKPI = query(
             collection(db, "registros_escaneo"), 
             where("usuarioId", "==", idUsuario), 
@@ -68,7 +64,6 @@ export default function ProfileScreen({ navigation }) {
             } else { setEficiencia(0); }
           });
 
-          // --- 4. HISTORIAL CON CÁLCULO DE TIEMPO ---
           const qHistorial = query(
             collection(db, "registros_escaneo"), 
             where("usuarioId", "==", idUsuario), 
@@ -91,7 +86,7 @@ export default function ProfileScreen({ navigation }) {
                 ...data, 
                 displayFecha: fechaTxt,
                 displayName: data.proyectoId || data.nombreFixtura || "Fixtura " + doc.id.substring(0,5),
-                tiempoTardado: calcularDuracion(data.horaInicio, data.horaFin) // <--- El nuevo tiempo
+                tiempoTardado: calcularDuracion(data.horaInicio, data.horaFin)
               };
             });
             setHistorial(docs.sort((a, b) => b.id.localeCompare(a.id)));
@@ -100,15 +95,23 @@ export default function ProfileScreen({ navigation }) {
       } catch (e) { console.log(e); } finally { setLoading(false); }
     };
 
-    // --- FUNCIONES DE APIs ---
     const fetchHora = () => {
       fetch('https://worldtimeapi.org/api/timezone/America/Chihuahua')
-        .then(res => { if (!res.ok) throw new Error('Error de red'); return res.json(); })
+        .then(res => res.json())
         .then(data => {
-          const d = new Date(data.datetime);
-          setHoraServidor(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+          // EL TRUCO: Reemplazamos el espacio por una 'T' para que sea formato ISO estándar
+          // Algunos celulares no aceptan el formato de WorldTimeAPI tal cual viene
+          const dateStr = data.datetime.replace(' ', 'T');
+          const d = new Date(dateStr);
+          
+          if (!isNaN(d.getTime())) {
+            setHoraServidor(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+          } else {
+            throw new Error("Fecha inválida");
+          }
         })
         .catch(() => {
+          // Si la API falla o da error de formato, usamos la hora del cel como respaldo
           const local = new Date();
           setHoraServidor(local.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         });
@@ -151,6 +154,8 @@ export default function ProfileScreen({ navigation }) {
         let url = docSnap.data().url;
         if (url.includes('drive.google.com')) url = url.replace('/view', '/preview');
         Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+      } else {
+        Alert.alert("Aviso", "No hay un manual activo.");
       }
     } catch (e) { Alert.alert("Error", "No se pudo abrir el manual."); }
   };
@@ -165,9 +170,9 @@ export default function ProfileScreen({ navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: '#f0f2f5' }}>
       
-      {/* BARRA SUPERIOR (Cerrar Sesión) */}
+      {/* BARRA SUPERIOR */}
       <View style={styles.topBar}>
-        <Text style={styles.topBarText}>Perfil</Text>
+        <Text style={styles.topBarText}>Perfil Técnico</Text>
         <TouchableOpacity style={styles.logoutTopBtn} onPress={cerrarSesion}>
           <Text style={styles.logoutTopText}>Cerrar Sesión</Text>
         </TouchableOpacity>
@@ -190,23 +195,23 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* DASHBOARD DE APIs (Grid de 4 recuadros) */}
+        {/* METRICAS */}
         <Text style={styles.sectionTitle}>Métricas en Tiempo Real</Text>
         <View style={styles.apiGrid}>
           <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>KPI ACTUAL</Text>
+            <Text style={styles.gridLabel}>KPI PROGRESO</Text>
             <Text style={[styles.gridVal, {color: '#2196F3'}]}>{eficiencia}%</Text>
           </View>
           <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>TIPO DE CAMBIO</Text>
+            <Text style={styles.gridLabel}>USD / MXN</Text>
             <Text style={styles.gridVal}>${tipoCambio}</Text>
           </View>
           <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>CLIMA</Text>
+            <Text style={styles.gridLabel}>TEMPERATURA</Text>
             <Text style={styles.gridVal}>{clima.temp}°C</Text>
           </View>
           <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>HORA</Text>
+            <Text style={styles.gridLabel}>HORA PLANTA</Text>
             <Text style={styles.gridVal}>{horaServidor}</Text>
           </View>
         </View>
@@ -216,14 +221,13 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.historialContainer}>
           {historial.length === 0 ? (
             <View style={{padding: 20, alignItems: 'center'}}>
-              <Text style={styles.noData}>No hay registros finalizados hoy</Text>
+              <Text style={styles.noData}>No hay registros finalizados</Text>
             </View>
           ) : (
             historial.map((item, index) => (
               <View key={index} style={styles.historialItem}>
                 <View style={{flex: 1}}>
                   <Text style={styles.fixName}>{item.displayName}</Text>
-                  {/* AQUÍ SE MUESTRAN LOS EMOJIS DE CALENDARIO Y TIEMPO */}
                   <Text style={styles.fixFecha}>
                     📅 {item.displayFecha} {item.tiempoTardado !== "N/A" && ` • ⏱️ ${item.tiempoTardado}`}
                   </Text>
@@ -234,16 +238,18 @@ export default function ProfileScreen({ navigation }) {
           )}
         </View>
 
-        {/* MANUAL PDF */}
+        {/* --- MANUAL PDF CON ICONO DE LIBRO --- */}
         <TouchableOpacity style={styles.manualCard} onPress={abrirManualDrive}>
-          <View style={styles.manualIcon}><Text style={{color: '#fff', fontWeight: 'bold'}}>PDF</Text></View>
+          <View style={styles.manualIcon}>
+            <Ionicons name="book" size={26} color="#fff" />
+          </View>
           <View style={{flex: 1}}>
               <Text style={styles.manualTitle}>Manual de Procedimientos</Text>
               <Text style={styles.manualSub}>Toque para abrir el visor técnico</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color="#ccc" />
         </TouchableOpacity>
 
-        {/* Espacio final para que se pueda scrollear bien */}
         <View style={{height: 40}} /> 
       </ScrollView>
     </View>
@@ -281,7 +287,7 @@ const styles = StyleSheet.create({
   noData: { textAlign: 'center', color: '#bbb', fontSize: 12 },
   
   manualCard: { backgroundColor: '#fff', marginTop: 10, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 2 },
-  manualIcon: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#E53935', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  manualTitle: { fontSize: 16, fontWeight: 'bold' },
+  manualIcon: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E53935', justifyContent: 'center', alignItems: 'center', marginRight: 15, elevation: 3 },
+  manualTitle: { fontSize: 15, fontWeight: 'bold', color: '#333' },
   manualSub: { fontSize: 12, color: '#999' }
 });

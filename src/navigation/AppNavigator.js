@@ -16,7 +16,7 @@ const Tab = createBottomTabNavigator();
 function MainTabs() {
   const [hasScanned, setHasScanned] = useState(false);
   
-  // Detección para habilitar el Escáner en navegadores de celular
+  // Detección responsiva para celular o PC
   const isMobileView = Dimensions.get('window').width < 768 || Platform.OS !== 'web';
 
   return (
@@ -24,10 +24,11 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
+          // IMPORTANTE: Los nombres aquí deben ser iguales a los Tab.Screen name
           if (route.name === 'Escanear') {
             iconName = focused ? 'qr-code' : 'qr-code-outline';
           } else if (route.name === 'Proyecto') {
-            iconName = focused ? 'time' : 'time-outline';
+            iconName = focused ? 'construct' : 'construct-outline';
           } else if (route.name === 'Perfil') {
             iconName = focused ? 'person-circle' : 'person-circle-outline';
           }
@@ -41,18 +42,19 @@ function MainTabs() {
         headerStyle: styles.header,
       })}
     >
-      {isMobileView && (
-        <Tab.Screen name="Escanear">
-          {(props) => <ScannerScreen {...props} setHasScanned={setHasScanned} />}
-        </Tab.Screen>
-      )}
+      {/* 1. Pantalla de Escaneo */}
+      <Tab.Screen name="Escanear">
+        {(props) => <ScannerScreen {...props} setHasScanned={setHasScanned} />}
+      </Tab.Screen>
 
+      {/* 2. Pantalla de Proyecto (Solo si escaneó) */}
       {hasScanned && (
         <Tab.Screen name="Proyecto">
           {(props) => <ProjectDetailScreen {...props} setHasScanned={setHasScanned} />}
         </Tab.Screen>
       )}
 
+      {/* 3. Pantalla de Perfil */}
       <Tab.Screen name="Perfil" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -69,7 +71,7 @@ export default function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
-  header: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee' },
-  headerTitle: { fontWeight: '800', fontSize: 18, color: '#2196F3' },
-  tabBar: { height: 65, paddingBottom: 10, paddingTop: 10, backgroundColor: '#fff' },
+  header: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee', height: 70 },
+  headerTitle: { fontWeight: '800', fontSize: 20, color: '#2196F3' },
+  tabBar: { height: 70, paddingBottom: 10, paddingTop: 10, backgroundColor: '#fff' },
 });

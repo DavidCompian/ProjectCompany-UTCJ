@@ -1,12 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function ScannerScreen({ navigation, setHasScanned }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [loading, setLoading] = useState(false);
+
+  // Reiniciar el estado de carga cuando la pantalla vuelve a estar enfocada
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(false);
+    }, [])
+  );
 
   // Verificación de permisos de cámara
   if (!permission?.granted) {
@@ -21,13 +29,13 @@ export default function ScannerScreen({ navigation, setHasScanned }) {
   }
 
   const handleBarCodeScanned = async ({ data }) => {
-    // Evita escaneos múltiples si ya está cargando
     if (loading) return;
     
     setLoading(true);
     try {
       const userAuth = auth.currentUser;
-      const idUsuario = userAuth?.email.split('@')[0].toUpperCase() || "USER_INV";
+      // Obtenemos el ID del usuario desde el correo de forma segura
+      const idUsuario = userAuth?.email ? userAuth.email.split('@')[0].toUpperCase() : "USER_INV";
 
       // 1. Crear el registro oficial de inicio en Firestore
       const docRef = await addDoc(collection(db, 'registros_escaneo'), {
@@ -37,18 +45,16 @@ export default function ScannerScreen({ navigation, setHasScanned }) {
         estado: 'en_proceso'
       });
 
-      // 2. ACTIVAR LA PESTAÑA: Informamos al AppNavigator que ya puede mostrar "Proyecto"
+      // 2. ACTIVAR LA PESTAÑA en el Navigator
       setHasScanned(true); 
 
-      // 3. NAVEGACIÓN SEGURA: 
-      // Usamos un pequeño retraso de 150ms para que el Tab Navigator 
-      // renderice la pestaña antes de que intentemos navegar a ella.
+      // 3. NAVEGACIÓN SEGURA con delay para permitir renderizado
       setTimeout(() => {
         navigation.navigate('Proyecto', { 
           proyectoId: data, 
           logId: docRef.id 
         });
-      }, 150);
+      }, 200);
 
     } catch (e) {
       console.log("Error al iniciar escaneo:", e);
@@ -61,7 +67,10 @@ export default function ScannerScreen({ navigation, setHasScanned }) {
     <View style={styles.container}>
       <CameraView
         onBarcodeScanned={loading ? undefined : handleBarCodeScanned}
-        barcodeSettings={{ barcodeTypes: ["qr"] }}
+        // CORRECCIÓN AQUÍ: Propiedad correcta para reconocer QR
+        barcodeScannerSettings={{
+          barcodeTypes: ["qr"],
+        }}
         style={StyleSheet.absoluteFillObject}
       />
       
@@ -99,8 +108,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   scanBox: { width: 220, height: 220, backgroundColor: 'transparent', position: 'relative' },
   
-  // Esquinas decorativas para el escáner
-  corner: { position: 'absolute', width: 40, height: 40, borderColor: '#2196F3', borderWeight: 5 },
+  corner: { position: 'absolute', width: 40, height: 40, borderColor: '#2196F3' },
   tl: { top: 0, left: 0, borderLeftWidth: 5, borderTopWidth: 5 },
   tr: { top: 0, right: 0, borderRightWidth: 5, borderTopWidth: 5 },
   bl: { bottom: 0, left: 0, borderLeftWidth: 5, borderBottomWidth: 5 },

@@ -15,8 +15,6 @@ const Tab = createBottomTabNavigator();
 
 function MainTabs() {
   const [hasScanned, setHasScanned] = useState(false);
-  
-  // Detección responsiva para celular o PC
   const isMobileView = Dimensions.get('window').width < 768 || Platform.OS !== 'web';
 
   return (
@@ -24,7 +22,7 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          // IMPORTANTE: Los nombres aquí deben ser iguales a los Tab.Screen name
+          // Nombres exactos de las pestañas
           if (route.name === 'Escanear') {
             iconName = focused ? 'qr-code' : 'qr-code-outline';
           } else if (route.name === 'Proyecto') {
@@ -42,19 +40,16 @@ function MainTabs() {
         headerStyle: styles.header,
       })}
     >
-      {/* 1. Pantalla de Escaneo */}
       <Tab.Screen name="Escanear">
         {(props) => <ScannerScreen {...props} setHasScanned={setHasScanned} />}
       </Tab.Screen>
 
-      {/* 2. Pantalla de Proyecto (Solo si escaneó) */}
       {hasScanned && (
         <Tab.Screen name="Proyecto">
           {(props) => <ProjectDetailScreen {...props} setHasScanned={setHasScanned} />}
         </Tab.Screen>
       )}
 
-      {/* 3. Pantalla de Perfil */}
       <Tab.Screen name="Perfil" component={ProfileScreen} />
     </Tab.Navigator>
   );

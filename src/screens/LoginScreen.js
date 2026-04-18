@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Alert, 
+  Image, 
+  ScrollView, 
+  Platform, 
+  TouchableWithoutFeedback, 
+  Keyboard, 
+  Dimensions,
+  KeyboardAvoidingView 
+} from 'react-native';
 
 // Importaciones de Firebase
 import { signInWithEmailAndPassword } from 'firebase/auth';
@@ -11,11 +25,17 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
 
   const irARegistro = () => {
-    // RESTRICCIÓN: Solo permite entrar al registro si detecta que estás en PC/Navegador
-    if (Platform.OS === 'web') {
+    // REGLA DE SEGURIDAD: Solo permite si es WEB y la pantalla es de PC (> 768px)
+    // Si es un celular (aunque use navegador web), el ancho será menor a 768
+    const esPC = Platform.OS === 'web' && Dimensions.get('window').width >= 768;
+
+    if (esPC) {
       navigation.navigate('AdminRegister');
     } else {
-      Alert.alert("Acceso Denegado", "El registro de personal solo se puede realizar desde el panel administrativo en PC.");
+      Alert.alert(
+        "Acceso Denegado", 
+        "El registro de personal solo se puede realizar desde el panel administrativo en una PC de escritorio."
+      );
     }
   };
 
@@ -45,50 +65,98 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <ScrollView contentContainerStyle={styles.container}>
-        
-        {/* TU LOGO ORIGINAL ESTÁ AQUÍ */}
-        <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000}>
-          <Image 
-            source={require('../../assets/logo.png')} 
-            style={styles.logo} 
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
-        
-        <TextInput 
-          style={styles.input} 
-          placeholder="Número de Reloj" 
-          onChangeText={setNombre => setNumeroReloj(setNombre)} 
-          autoCapitalize="characters" 
-        />
-        <TextInput 
-          style={styles.input} 
-          placeholder="Contraseña" 
-          onChangeText={setPass => setPassword(setPass)} 
-          secureTextEntry 
-        />
-        
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
-        </TouchableOpacity>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1, backgroundColor: '#fff' }}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.card}>
+            {/* LOGO CON RUTA SECRETA: 3 segundos presionado */}
+            <TouchableOpacity onLongPress={irARegistro} delayLongPress={3000}>
+              <Image 
+                source={require('../../assets/logo.png')} 
+                style={styles.logo} 
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+            
+            <View style={styles.form}>
+              <TextInput 
+                style={styles.input} 
+                placeholder="Número de Reloj" 
+                value={numeroReloj}
+                onChangeText={text => setNumeroReloj(text)} 
+                autoCapitalize="characters" 
+                placeholderTextColor="#999"
+              />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Contraseña" 
+                value={password}
+                onChangeText={text => setPassword(text)} 
+                secureTextEntry 
+                placeholderTextColor="#999"
+              />
+              
+              <TouchableOpacity style={styles.button} onPress={handleLogin}>
+                <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
+              </TouchableOpacity>
+            </View>
 
-        {Platform.OS === 'web' && (
-          <Text style={styles.hint}>PC Detectada: Mantén presionado el logo para registrar</Text>
-        )}
-      </ScrollView>
-    </TouchableWithoutFeedback>
+            {/* Hint solo visible en PC para no dar pistas en móvil */}
+            {Platform.OS === 'web' && Dimensions.get('window').width >= 768 && (
+              <Text style={styles.hint}>PC Detectada: Mantén presionado el logo para gestionar personal</Text>
+            )}
+          </View>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 30, backgroundColor: '#fff' },
-  logo: { width: 280, height: 280, alignSelf: 'center', marginBottom: 10 },
-  brand: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', color: '#333' },
-  subtitle: { fontSize: 14, textAlign: 'center', color: '#2196F3', marginBottom: 30, fontWeight: 'bold' },
-  input: { backgroundColor: '#f5f5f5', padding: 18, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#eee', textAlign: 'center' },
-  button: { backgroundColor: '#2196F3', padding: 20, borderRadius: 12, alignItems: 'center' },
+  scrollContainer: { 
+    flexGrow: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    paddingVertical: 20
+  },
+  card: {
+    width: '90%',
+    maxWidth: 450,
+    alignItems: 'center',
+    padding: 20
+  },
+  logo: { 
+    width: 280, 
+    height: 200, 
+    marginBottom: 20 
+  },
+  form: {
+    width: '100%',
+  },
+  input: { 
+    backgroundColor: '#f5f5f5', 
+    padding: 18, 
+    borderRadius: 12, 
+    marginBottom: 15, 
+    borderWidth: 1, 
+    borderColor: '#eee', 
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#000'
+  },
+  button: { 
+    backgroundColor: '#2196F3', 
+    padding: 20, 
+    borderRadius: 12, 
+    alignItems: 'center',
+    marginTop: 10
+  },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 18 },
-  hint: { textAlign: 'center', marginTop: 20, color: '#ccc', fontSize: 11 }
+  hint: { textAlign: 'center', marginTop: 25, color: '#ccc', fontSize: 11 }
 });
